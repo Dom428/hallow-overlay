@@ -1,6 +1,7 @@
 ﻿// Hallow Overlay - a real-time Windows event tracing (ETW) session: what the FPS counter and the game server finder read.
 // Windows allows this for admins and members of "Performance Log Users"; otherwise Start says Denied and the feature stays off.
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -27,6 +28,22 @@ namespace HallowOverlay
         public EtwSession(string sessionName, Guid[] providerIds, ulong[] providerKeywords, Action<IntPtr> handler)
         {
             name = sessionName; providers = providerIds; keywords = providerKeywords; onEvent = handler;
+        }
+        // Only these event ids (per provider, null = all) - Windows drops the rest before they reach us, which keeps busy providers cheap.
+        public ushort[][] EventIds;
+
+        // ENABLE_TRACE_PARAMETERS (x64, 48 bytes) with one EVENT_FILTER_DESCRIPTOR of type EVENT_FILTER_TYPE_EVENT_ID
+        static IntPtr IdFilter(ushort[] ids, List<IntPtr> free)
+        {
+            int fsize = 4 + 2 * ids.Length; var f = Marshal.AllocHGlobal(fsize); free.Add(f);
+            Marshal.WriteByte(f, 0, 1); Marshal.WriteByte(f, 1, 0); Marshal.WriteInt16(f, 2, (short)ids.Length);
+            for (int i = 0; i < ids.Length; i++) Marshal.WriteInt16(f, 4 + 2 * i, (short)ids[i]);
+            var d = Marshal.AllocHGlobal(16); free.Add(d);
+            Marshal.WriteInt64(d, 0, f.ToInt64()); Marshal.WriteInt32(d, 8, fsize); Marshal.WriteInt32(d, 12, unchecked((int)0x80000200));
+            var p = Marshal.AllocHGlobal(48); free.Add(p);
+            for (int i = 0; i < 48; i++) Marshal.WriteByte(p, i, 0);
+            Marshal.WriteInt32(p, 0, 2); Marshal.WriteIntPtr(p, 32, d); Marshal.WriteInt32(p, 40, 1);
+            return p;
         }
 
         static IntPtr Props()
@@ -58,12 +75,18 @@ namespace HallowOverlay
                 }
                 if (r != 0) { Denied = r == 5; return false; }
                 Denied = false;
-                uint ok = 0, last = 0;
-                for (int i = 0; i < providers.Length; i++)
+                uint ok = 0, last = 0; var free = new List<IntPtr>();
+                try
                 {
-                    var g = providers[i]; last = EnableTraceEx2(session, ref g, 1, 5, keywords[i], 0, 0, IntPtr.Zero);
-                    if (last == 0) ok++;
+                    for (int i = 0; i < providers.Length; i++)
+                    {
+                        var g = providers[i]; var ids = EventIds != null && i < EventIds.Length ? EventIds[i] : null;
+                        last = EnableTraceEx2(session, ref g, 1, 5, keywords[i], 0, 0, ids == null ? IntPtr.Zero : IdFilter(ids, free));
+                        if (last != 0 && ids != null) last = EnableTraceEx2(session, ref g, 1, 5, keywords[i], 0, 0, IntPtr.Zero);   // older Windows: no filter
+                        if (last == 0) ok++;
+                    }
                 }
+                finally { foreach (var f in free) Marshal.FreeHGlobal(f); }
                 if (ok == 0) { StopSession(); Denied = last == 5; return false; }
                 // EVENT_TRACE_LOGFILEW (x64: 448 bytes): LoggerName at 8, ProcessTraceMode at 28, EventRecordCallback at 424
                 logfile = Marshal.AllocHGlobal(448);

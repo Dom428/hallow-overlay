@@ -21,14 +21,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.10.0.0")]
-[assembly: AssemblyFileVersion("1.10.0.0")]
+[assembly: AssemblyVersion("1.11.0.0")]
+[assembly: AssemblyFileVersion("1.11.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.10";
+        public const string Version = "1.11";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -128,7 +128,7 @@ namespace HallowOverlay
             };
             if (s.Game && game != null && !bad) item("gamepad", game, 0);
             if (s.Session && session != null && !bad) item("stopwatch", session.Value.TotalHours >= 1 ? ((int)session.Value.TotalHours + ":" + session.Value.Minutes.ToString("00")) : session.Value.Minutes + " min", 0);
-            if (s.Fps && x.Fps >= 0) item("gauge-high", x.Fps.ToString("0") + " FPS" + (x.FpsLow >= 0 ? "  1% " + x.FpsLow.ToString("0") : ""), x.Fps < 30 ? 2 : x.Fps < 50 ? 1 : 0);
+            if (s.Fps && x.Fps >= 0) item("gauge-high", x.Fps.ToString("0") + " FPS" + (x.FpsLow >= 0 ? "  1% " + x.FpsLow.ToString("0") : "") + (s.Fps01 && x.FpsLow01 >= 0 ? "  0.1% " + x.FpsLow01.ToString("0") : ""), x.Fps < 30 ? 2 : x.Fps < 50 ? 1 : 0);
             if (s.FrameGraph && x.FrameMs != null && x.FrameCount >= 10)
             {
                 int spikes; var g = Graph(x.FrameMs, x.FrameCount, s.GraphSize, k, out spikes);
@@ -274,6 +274,8 @@ namespace HallowOverlay
             msgTimer = new DispatcherTimer(); msgTimer.Tick += (s, e) => { msgTimer.Stop(); Refresh(); };
             Link.Serve(Dispatcher, OnCommand);
             Accent.Watch(Dispatcher, ApplyAccent);
+            { DateTime lc; if (S.AutoUpdate && (!DateTime.TryParse(S.LastUpdateCheck, out lc) || (DateTime.Now - lc).TotalHours > 20)) CheckForUpdate(false); }
+            var daily = new DispatcherTimer { Interval = TimeSpan.FromHours(6) }; daily.Tick += (s, e) => { DateTime lc; if (S.AutoUpdate && (!DateTime.TryParse(S.LastUpdateCheck, out lc) || (DateTime.Now - lc).TotalHours > 20)) CheckForUpdate(false); }; daily.Start();
             Dispatcher.BeginInvoke(new Action(CheckCrash), DispatcherPriority.ApplicationIdle);
             AppDomain.CurrentDomain.ProcessExit += (s, e) => { try { fps.Stop(); net.Stop(); } catch { } };   // never leave a trace session behind
             WriteStatus(true);
@@ -306,6 +308,54 @@ namespace HallowOverlay
             var f = pendingCrash; pendingCrash = null;
             S.LastCrashShown = System.IO.Path.GetFileName(f); S.Save();
             new CrashNotice(f) { Owner = this }.Show();
+        }
+
+        // ---- updates (GitHub releases; asks first, checks the SHA-256 before installing)
+        Border updateRow; Button updateBtn; TextBlock updateText; GhRelease pending; string updateNote;
+        void CheckForUpdate(bool manual)
+        {
+            if (manual) { updateNote = "Looking for an update..."; ShowUpdate(); }
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                var r = Updater.Latest();
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (r == null) { updateNote = manual ? "Couldn't reach GitHub - try again later." : null; ShowUpdate(); return; }
+                    S.LastUpdateCheck = DateTime.Now.ToString("o"); S.Save();
+                    if (!Updater.IsNewer(r)) { pending = null; updateNote = manual ? "You have the newest version (v" + Program.Version + ")." : null; ShowUpdate(); return; }
+                    pending = r; updateNote = null; ShowUpdate();
+                    var v = r.Version.ToString(2);
+                    if (!manual && S.ToldUpdate != v) { S.ToldUpdate = v; S.Save(); Balloon("Hallow Overlay " + v + " is available", "Open Overlay's settings to update (it asks first).", 6000); }
+                }));
+            });
+        }
+        void ShowUpdate()
+        {
+            if (updateRow == null) return;
+            if (pending != null)
+            {
+                var v = pending.Version.ToString(2);
+                updateText.Text = "Hallow Overlay " + v + " is available (you have " + Program.Version + "). It's checked against GitHub's checksum before it installs, then Overlay reopens.";
+                updateBtn.Content = "Update to v" + v; updateBtn.Visibility = Visibility.Visible; updateBtn.IsEnabled = true;
+                updateBtn.ToolTip = (pending.Notes ?? "").Length > 600 ? pending.Notes.Substring(0, 600) + "..." : pending.Notes;
+                updateRow.Visibility = Visibility.Visible;
+            }
+            else if (updateNote != null) { updateText.Text = updateNote; updateBtn.Visibility = Visibility.Collapsed; updateRow.Visibility = Visibility.Visible; }
+            else updateRow.Visibility = Visibility.Collapsed;
+        }
+        void InstallUpdate()
+        {
+            var r = pending; if (r == null) return;
+            updateBtn.IsEnabled = false; updateBtn.Content = "Updating...";
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                var err = Updater.Install(r);
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (err != null) { updateText.Text = err; updateBtn.IsEnabled = true; updateBtn.Content = "Update to v" + r.Version.ToString(2); }
+                    else updateText.Text = "Installing the update - Hallow Overlay reopens in a few seconds.";
+                }));
+            });
         }
 
         void ShowWhatsNew()
@@ -476,8 +526,8 @@ namespace HallowOverlay
             var x = sampler.Latest; var cur = Current;
             var game = cur == null ? null : (cur.Game.Parent ?? cur.Game).Name;
             TimeSpan? session = cur == null ? (TimeSpan?)null : DateTime.Now - cur.Since;
-            double f, low; x.Fps = x.FpsLow = -1;
-            if (cur != null && fps.Running && fps.Read(cur.Pids, out f, out low)) { x.Fps = f; x.FpsLow = low; }
+            double f, low, low01; x.Fps = x.FpsLow = x.FpsLow01 = -1;
+            if (cur != null && fps.Running && fps.Read(cur.Pids, out f, out low, out low01)) { x.Fps = f; x.FpsLow = low; x.FpsLow01 = low01; }
             x.FrameMs = null; x.FrameCount = 0;
             if (cur != null && fps.Running && S.LookFor(game).FrameGraph) { x.FrameMs = frameBuf; x.FrameCount = fps.FrameTimes(cur.Pids, 5, frameBuf); }
             x.ServerLabel = null; x.UpKbps = x.DownKbps = -1; x.ServerMs = x.ServerLoss = -1; x.Stalls = 0; string srvRegion = null, srvIp = null, srvHost = null;
@@ -516,7 +566,7 @@ namespace HallowOverlay
             else if (ov.IsVisible) ov.Hide();
             if (IsVisible)
             {
-                var px = x; if (px.Fps < 0 && !fps.Denied) { px = x.Copy(); px.Fps = 144; px.FpsLow = 97; px.FrameMs = FakeFrames(); px.FrameCount = px.FrameMs.Length; }   // what it looks like in a game
+                var px = x; if (px.Fps < 0 && !fps.Denied) { px = x.Copy(); px.Fps = 144; px.FpsLow = 97; px.FpsLow01 = 81; px.FrameMs = FakeFrames(); px.FrameCount = px.FrameMs.Length; }   // what it looks like in a game
                 var pl = editGame != null ? S.LookFor(editGame) : look;
                 preview.HorizontalAlignment = pl.Corner.EndsWith("r") ? HorizontalAlignment.Right : HorizontalAlignment.Left;
                 preview.VerticalAlignment = pl.Corner.StartsWith("b") ? VerticalAlignment.Bottom : VerticalAlignment.Top;
@@ -620,6 +670,11 @@ namespace HallowOverlay
             var hide = new CheckBox { Content = "Hide the server's IP address (for streaming) - only its region is shown", IsChecked = S.HideServerIp, Style = (Style)FindResource("Switch") };
             hide.Click += (s, e) => { S.HideServerIp = hide.IsChecked == true; S.Save(); Refresh(); };
             sp.Children.Add(hide);
+            updateRow = new Border { Background = B("#2A2236"), BorderBrush = Accent.Brush(), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 10, 14, 10), Margin = new Thickness(0, 14, 0, 0), Visibility = Visibility.Collapsed };
+            var ur = new DockPanel(); updateBtn = new Button { Style = (Style)FindResource("Accent"), MinWidth = 120 }; DockPanel.SetDock(updateBtn, Dock.Right);
+            updateBtn.Click += (s, e) => InstallUpdate(); ur.Children.Add(updateBtn);
+            updateText = new TextBlock { TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) }; ur.Children.Add(updateText);
+            updateRow.Child = ur; sp.Children.Add(updateRow); ShowUpdate();
             var hb = new Button { Content = "Match history", Style = (Style)FindResource("Btn"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 14, 0, 0) };
             hb.Click += (s, e) => ShowHistory(); sp.Children.Add(hb);
             var more = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
@@ -630,13 +685,17 @@ namespace HallowOverlay
             };
             sw2("Only while a game is running (Steam, Battle.net, Epic, EA, Ubisoft, GOG, Riot, Xbox)", S.OnlyInGame, v => S.OnlyInGame = v);
             sw2("Keep running in the tray when I close this window", S.TrayOnClose, v => S.TrayOnClose = v);
+            sw2("Look for updates once a day (it always asks before installing)", S.AutoUpdate, v => S.AutoUpdate = v);
             sw2("Use the Hallow accent: the colour picked in Hallow Toolkit (warnings stay red and amber)", S.UseHallowAccent, v => { S.UseHallowAccent = v; Dispatcher.BeginInvoke(new Action(ApplyAccent)); });
             sw2("Use the Hallow icon: when Hallow Hub is running, its one tray icon has Overlay's menu (Overlay's own icon hides)", S.UseHallowIcon, v => { S.UseHallowIcon = v; hub.CheckNow(); });
             sw2("Start with Windows (in the tray)", StartsWithWindows(), v => SetStartWithWindows(v));
             sp.Children.Add(more);
             foot = new TextBlock { Text = FootText(), Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
             sp.Children.Add(foot);
-            sp.Children.Add(new TextBlock { Text = "Hallow Overlay " + Program.Version + "  -  icons: Font Awesome Free (CC BY 4.0)", Foreground = (Brush)FindResource("Muted"), FontSize = 11, Margin = new Thickness(0, 8, 0, 0) });
+            var vr = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+            vr.Children.Add(new TextBlock { Text = "Hallow Overlay " + Program.Version + "  -  icons: Font Awesome Free (CC BY 4.0)", Foreground = (Brush)FindResource("Muted"), FontSize = 11, VerticalAlignment = VerticalAlignment.Center });
+            var chk = new Button { Content = "Check for updates", Style = (Style)FindResource("Btn"), Margin = new Thickness(12, 0, 0, 0), Padding = new Thickness(10, 3, 10, 3), FontSize = 11 };
+            chk.Click += (s, e) => CheckForUpdate(true); vr.Children.Add(chk); sp.Children.Add(vr);
             return new ScrollViewer { Content = sp, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         }
 
@@ -696,7 +755,7 @@ namespace HallowOverlay
             sw("MIC MUTED warning", T.MicWarn, v => T.MicWarn = v); sw("CPU", T.Cpu, v => T.Cpu = v); sw("GPU load", T.Gpu, v => T.Gpu = v);
             sw("GPU temperature", T.GpuTemp, v => T.GpuTemp = v); sw("RAM", T.Ram, v => T.Ram = v); sw("Ping", T.Ping, v => T.Ping = v);
             sw("Session time", T.Session, v => T.Session = v); sw("Clock", T.Clock, v => T.Clock = v); sw("Game name", T.Game, v => T.Game = v);
-            sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v); sw("Now playing (Mixer)", T.NowPlaying, v => T.NowPlaying = v); sw("Game server", T.Server, v => T.Server = v); sw("Game traffic (up / down)", T.Traffic, v => T.Traffic = v);
+            sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("0.1% low", T.Fps01, v => T.Fps01 = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v); sw("Now playing (Mixer)", T.NowPlaying, v => T.NowPlaying = v); sw("Game server", T.Server, v => T.Server = v); sw("Game traffic (up / down)", T.Traffic, v => T.Traffic = v);
             sw("GPU clocks", T.GpuClocks, v => T.GpuClocks = v); sw("GPU power", T.GpuPower, v => T.GpuPower = v); sw("VRAM", T.Vram, v => T.Vram = v);
             sw("Frame-time graph", T.FrameGraph, v => T.FrameGraph = v);
             lookHost.Children.Add(grid);
@@ -731,7 +790,7 @@ namespace HallowOverlay
         string FootText()
         {
             return "Ctrl+Shift+O shows or hides it. Ping goes to " + S.PingHost + " (your internet, not the game server). GPU numbers need an NVIDIA card. " +
-                "FPS comes from Windows' own frame events, like PresentMon (DirectX games). " +
+                "FPS comes from Windows' own frame events, like PresentMon (DirectX, Vulkan and OpenGL games). " +
                 (fps.Denied ? "This Windows account isn't allowed to read them (that needs the Performance Log Users group), so FPS stays hidden. " : "") +
                 "It's a normal see-through window - nothing touches the game, so it's safe with anti-cheat - but it can't draw over games in exclusive fullscreen: use borderless / windowed fullscreen.";
         }
@@ -766,7 +825,7 @@ namespace HallowOverlay
 
         public void SnapAll(string dir)
         {
-            var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97, NowPlaying = "Lo-fi Beats - Rainy Night", ServerLabel = "FRA", ServerMs = 23, ServerApprox = true, ServerLoss = 0, UpKbps = 96, DownKbps = 410, GpuClock = 2610, MemClock = 10501, PowerW = 241, PowerLimitW = 285, VramUsedMB = 9420, VramTotalMB = 16376, FrameMs = FakeFrames(), FrameCount = 720 };
+            var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97, FpsLow01 = 81, NowPlaying = "Lo-fi Beats - Rainy Night", ServerLabel = "FRA", ServerMs = 23, ServerApprox = true, ServerLoss = 0, UpKbps = 96, DownKbps = 410, GpuClock = 2610, MemClock = 10501, PowerW = 241, PowerLimitW = 285, VramUsedMB = 9420, VramTotalMB = 16376, FrameMs = FakeFrames(), FrameCount = 720 };
             preview.Child = Fit(Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)));
             state.Text = "Waiting for a game - it appears by itself when one starts.";
             Snap.Save(this, System.IO.Path.Combine(dir, "settings.png"), 760, 0);
@@ -774,6 +833,7 @@ namespace HallowOverlay
             Snap.Save(w, System.IO.Path.Combine(dir, "panel.png"), 760, 0);
             state.Text = ExclusiveNote("Delta Force"); state.Foreground = B("#F0BE5A");
             Snap.Save(this, System.IO.Path.Combine(dir, "settings-exclusive.png"), 760, 0);
+            pending = new GhRelease { Tag = "v1.12", Notes = "Benchmark mode" }; ShowUpdate(); Snap.Save(this, System.IO.Path.Combine(dir, "settings-update.png"), 760, 0); pending = null; ShowUpdate();
             Action<string, FrameworkElement, double> one = (name, el, width) => Snap.Save(new Window { Background = Brushes.Transparent, Content = el, FontFamily = new FontFamily("Segoe UI") }, System.IO.Path.Combine(dir, name), width, 0);
             one("flash.png", Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42), "Clip saved", false, false), 760);
             serverInfo.Text = Describe(IPAddress.Parse("203.0.113.7"), new ServerNames.Info { Code = "FRA", City = "Frankfurt", Host = "fra1-gs7.example.net" }, "hop", 2);

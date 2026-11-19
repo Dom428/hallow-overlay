@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.11", new[] { "Updates itself: it looks once a day and asks before installing (checked against GitHub's checksum)", "FPS for Vulkan and OpenGL games too, and an optional 0.1% low" }),
             Tuple.Create("1.10", new[] { "Hallow Remote's Live stats tab now shows your FPS, ping and the server's region while you play (never the server's IP)" }),
             Tuple.Create("1.9", new[] { "GPU clocks, power draw (W and % of the limit) and VRAM, for NVIDIA cards (Show > GPU clocks / GPU power / VRAM)", "A frame-time graph of the last 5 seconds with stutters in red (Show > Frame-time graph; Small / Medium / Large)" }),
             Tuple.Create("1.8", new[] { "Uses the Hallow accent colour you pick in Hallow Toolkit (Settings > Use the Hallow accent)", "If Hallow Overlay ever crashes, a report is kept on this PC and you're told next time - nothing is sent anywhere" }),

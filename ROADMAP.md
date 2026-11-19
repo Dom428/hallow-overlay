@@ -15,8 +15,16 @@
 | **1.8** | Hallow accent colour from Hallow Toolkit (live, "Use the Hallow accent"; warnings stay red / amber); crash reports kept on this PC with a notice next time and `lastCrash` in status - nothing sent anywhere |
 | **1.9** | GPU core / memory clocks, power draw (W and % of the limit) and VRAM; frame-time graph of the last 5 s with spikes in red (Small / Medium / Large, one geometry per refresh); average GPU power and peak VRAM in match summaries; nvidia-smi always ends with Overlay |
 | **1.10** | Live FPS, 1% low, ping and server region (never the IP) in status for Hallow Remote's Live stats tab - every 2 s while a game runs, cleared when it ends |
+| **1.11** | Updates itself from GitHub (asks first, SHA-256 checked); FPS for Vulkan / OpenGL games from the graphics kernel's present events (no admin); 0.1% lows |
 
 ## Next
+
+### 1.12 - Benchmark and logging
+- Benchmark mode: a hotkey starts and stops it, then a report with average FPS, 1% and 0.1% lows, frame-time percentiles and a frame-time chart, saved as PNG + CSV
+- Optional CSV log of every stat while you play
+
+### 1.13 - Layout editor
+- Order of the stats, your own labels, font size, a colour per stat, and text or a small graph per stat
 
 ### Fixes from real use
 - Check it over real games in borderless / windowed mode, and that the exclusive-fullscreen notice shows up for games that really use exclusive fullscreen (needs real games - not testable here)
@@ -29,3 +37,19 @@
 
 ## Later
 - CPU temperature - Windows has no reliable source for it without an admin-level driver (the WMI thermal zone is usually the motherboard or a fixed value), so it waits until there's a safe way
+
+### Gaps vs Afterburner / RTSS
+What MSI Afterburner + RivaTuner Statistics Server, the Xbox Game Bar performance widget and the NVIDIA app overlay do that Hallow Overlay doesn't (yet):
+- **FPS limiter / frame cap** (RTSS, NVIDIA app) - not doing: it needs code injected into the game (or a driver setting), which is exactly what keeps Overlay anti-cheat safe
+- **OSD inside exclusive fullscreen** (RTSS) - not doing: needs injection; Overlay tells you to use borderless instead
+- **Overclocking, voltage and fan curves** (Afterburner) - not doing: driver-level control that needs admin and can damage hardware
+- **AMD / Intel GPU sensors** (Afterburner, Game Bar) - not now: needs the vendor's library and a card to test with (NVIDIA only here)
+- **CPU temperature, per-core clocks and load** (Afterburner) - not now: no reliable source without an admin driver (see Later)
+- **PC latency / Reflex stats** (NVIDIA app) - not doing: needs Reflex built into the game
+- **Video and screenshot capture** (Afterburner, Game Bar, NVIDIA app) - covered by Hallow Clips
+- **Vulkan / OpenGL FPS** (RTSS, PresentMon) - buildable: the graphics kernel's present events work without admin -> 1.11
+- **Updates itself** - buildable -> 1.11
+- **0.1% lows, benchmark mode with a report** (Afterburner, NVIDIA app) - buildable -> 1.11 / 1.12
+- **Logging to a file** (Afterburner's hardware monitor log) - buildable as CSV -> 1.12
+- **OSD layout editor: order, labels, colours, font size, text or graph per item** (RTSS / Afterburner) - buildable -> 1.13
+- **Your own hotkeys** (Afterburner) - buildable, later: Ctrl+Shift+O and the benchmark hotkey are fixed for now

@@ -5,6 +5,10 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.11
+- Updates itself: once a day it looks for a new version and asks before installing.
+- FPS for Vulkan and OpenGL games too, and an optional 0.1% low.
+
 WHAT'S NEW IN 1.10
 - Hallow Remote's Live stats tab shows your FPS, ping and the server's region while you play (never the server's IP).
 
@@ -36,7 +40,7 @@ WHAT'S NEW IN 1.3
 - Packet loss and jitter next to ping.
 
 WHAT'S NEW IN 1.2
-- FPS and 1% lows for the game you're playing (DirectX games), and a frame-time graph with stutters in red
+- FPS, 1% and 0.1% lows for the game you're playing (DirectX, Vulkan and OpenGL games), and a frame-time graph with stutters in red
 - GPU clocks, power draw and VRAM (NVIDIA cards)
 - The game's server: its region, ping, loss and stalls (and the game's up / down traffic if you like)
 - Your FPS, ping and the server's region on your phone in Hallow Remote's Live stats tab (never the server's IP)
@@ -49,7 +53,7 @@ WHAT'S NEW IN 1.1
 WHAT IT SHOWS
 - A big red MIC MUTED warning when your mic is muted in Hallow Mixer, and the song or video that's playing
 - "Clip saved" from Hallow Clips and Hallow Hub's break reminder / daily limit, right on the panel
-- FPS and 1% lows for the game you're playing (DirectX games), and a frame-time graph with stutters in red
+- FPS, 1% and 0.1% lows for the game you're playing (DirectX, Vulkan and OpenGL games), and a frame-time graph with stutters in red
 - GPU clocks, power draw and VRAM (NVIDIA cards)
 - The game's server: its region, ping, loss and stalls (and the game's up / down traffic if you like)
 - Your FPS, ping and the server's region on your phone in Hallow Remote's Live stats tab (never the server's IP)
@@ -63,6 +67,7 @@ WHAT IT SHOWS
 - With Hallow Hub running, Overlay's menu is in Hub's one Hallow icon (turn off "Use the Hallow icon" to keep Overlay's own)
 
 GOOD TO KNOW
+- It updates itself: once a day it looks for a new version on GitHub and asks before installing.
 - It's its own see-through window: nothing is injected into the game, so it's safe with anti-cheat.
 - If it ever crashes, a report is kept on this PC (%APPDATA%\HallowOverlay\crashes) and you're told next time. Nothing is sent anywhere.
 - It can't draw over games in exclusive fullscreen - use borderless / windowed fullscreen.
