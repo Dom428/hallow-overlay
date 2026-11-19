@@ -1,4 +1,4 @@
-// Hallow Overlay - settings (%APPDATA%\HallowOverlay\overlay.json) and the numbers it shows, read in the background once a second.
+﻿// Hallow Overlay - settings (%APPDATA%\HallowOverlay\overlay.json) and the numbers it shows, read in the background once a second.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -25,10 +25,14 @@ namespace HallowOverlay
         [DataMember] public string PingHost = "1.1.1.1";
         [DataMember] public bool Hotkey = true;          // Ctrl+Shift+O shows / hides it
         [DataMember] public bool TrayOnClose = true;
+        [DataMember] public List<string> OffGames = new List<string>();   // games the overlay stays off in (set by Hallow Hub through the link)
+        [DataMember] public string LastSeenVersion = "";
         [OnDeserializing] void D(StreamingContext c)
         {
             Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; PingHost = "1.1.1.1"; Hotkey = true; TrayOnClose = true;
+            OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
         }
+        [OnDeserialized] void Fix(StreamingContext c) { if (OffGames == null) OffGames = new List<string>(); }
         public static string Dir { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HallowOverlay"); } }
         static string FilePath { get { return Path.Combine(Dir, "overlay.json"); } }
         public static bool Frozen;
