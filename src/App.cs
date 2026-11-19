@@ -20,14 +20,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.3.0.0")]
-[assembly: AssemblyFileVersion("1.3.0.0")]
+[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyFileVersion("1.4.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.3";
+        public const string Version = "1.4";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -76,7 +76,7 @@ namespace HallowOverlay
         public static FrameworkElement Build(OverlaySettings s, Sample x, string game, TimeSpan? session, string msg, bool strong, bool msgOnly)
         {
             var k = s.Scale; var items = new List<FrameworkElement>();
-            if (msgOnly) { s = new OverlaySettings { Scale = s.Scale, Row = s.Row, Opacity = s.Opacity, MicWarn = false, Cpu = false, Gpu = false, GpuTemp = false, Ram = false, Ping = false, Clock = false, Session = false, Game = false, Fps = false }; }
+            if (msgOnly) { s = new OverlaySettings { Scale = s.Scale, Row = s.Row, Opacity = s.Opacity, MicWarn = false, Cpu = false, Gpu = false, GpuTemp = false, Ram = false, Ping = false, Clock = false, Session = false, Game = false, Fps = false, NowPlaying = false }; }
             bool bad = s.OnlyBad;   // only stats that are in trouble (and the MIC MUTED warning / messages)
             Action<string, string, int> item = (icon, text, level) =>
             {
@@ -111,6 +111,7 @@ namespace HallowOverlay
                 }
                 item("signal", text, lv);
             }
+            if (s.NowPlaying && !string.IsNullOrEmpty(x.NowPlaying)) item("music", x.NowPlaying.Length > 48 ? x.NowPlaying.Substring(0, 47) + "\u2026" : x.NowPlaying, 0);
             if (s.Clock) item("clock", DateTime.Now.ToString("HH:mm"), 0);
             var list = new StackPanel { Orientation = s.Row ? Orientation.Horizontal : Orientation.Vertical };
             foreach (var i in items) list.Children.Add(i);
@@ -461,7 +462,7 @@ namespace HallowOverlay
             sw("MIC MUTED warning", T.MicWarn, v => T.MicWarn = v); sw("CPU", T.Cpu, v => T.Cpu = v); sw("GPU load", T.Gpu, v => T.Gpu = v);
             sw("GPU temperature", T.GpuTemp, v => T.GpuTemp = v); sw("RAM", T.Ram, v => T.Ram = v); sw("Ping", T.Ping, v => T.Ping = v);
             sw("Session time", T.Session, v => T.Session = v); sw("Clock", T.Clock, v => T.Clock = v); sw("Game name", T.Game, v => T.Game = v);
-            sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v);
+            sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v); sw("Now playing (Mixer)", T.NowPlaying, v => T.NowPlaying = v);
             lookHost.Children.Add(grid);
             var bad = new CheckBox { Content = new TextBlock { Text = "Only when something's wrong: a stat shows up only while it's in trouble (hot GPU, high ping or packet loss, RAM almost full, low FPS, busy CPU)", TextWrapping = TextWrapping.Wrap },
                 IsChecked = T.OnlyBad, Style = (Style)FindResource("Switch"), Margin = new Thickness(0, 8, 0, 0) };
@@ -501,7 +502,7 @@ namespace HallowOverlay
 
         public void SnapAll(string dir)
         {
-            var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97 };
+            var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97, NowPlaying = "Lo-fi Beats - Rainy Night" };
             preview.Child = Fit(Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)));
             state.Text = "Waiting for a game - it appears by itself when one starts.";
             Snap.Save(this, System.IO.Path.Combine(dir, "settings.png"), 760, 0);

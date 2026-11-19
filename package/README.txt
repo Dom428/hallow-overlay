@@ -5,6 +5,10 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.4
+- Now playing from Hallow Mixer, and MIC MUTED shows up the moment you mute (Mixer 3.14 or newer).
+- "Clip saved" from Hallow Clips and Hallow Hub's break reminder / daily limit show up on the panel.
+
 WHAT'S NEW IN 1.3
 - Give a game its own corner, size and stats (Settings for > pick the game).
 - "Only when something's wrong": stats show up only while they're in trouble - you set the limits.
@@ -18,7 +22,8 @@ WHAT'S NEW IN 1.1
 - Other Hallow apps can show / hide the overlay and put short messages on it ("Clip saved", break reminders).
 
 WHAT IT SHOWS
-- A big red MIC MUTED warning when your mic is muted in Hallow Mixer
+- A big red MIC MUTED warning when your mic is muted in Hallow Mixer, and the song or video that's playing
+- "Clip saved" from Hallow Clips and Hallow Hub's break reminder / daily limit, right on the panel
 - FPS and 1% lows for the game you're playing (DirectX games)
 - CPU, GPU load and temperature (NVIDIA cards), RAM, ping, session time, the clock
 - Only while a game is running (Steam, Battle.net, Epic, EA, Ubisoft, GOG, Riot, Xbox) - or always
