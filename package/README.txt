@@ -5,6 +5,9 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.13
+- Layout editor: your own order, labels, colours, small graphs of the last minute, and text size.
+
 WHAT'S NEW IN 1.12
 - Benchmark: Ctrl+Shift+F9 starts and stops it - average FPS, 1% and 0.1% lows, frame-time percentiles and a chart (PNG + CSV).
 - Optional CSV log of every stat while you play.
@@ -64,6 +67,7 @@ WHAT IT SHOWS
 - Match history: a summary of every game session (FPS, ping, stalls, servers, temperatures), and a one-line summary on the panel when a game closes
 - CPU, GPU load and temperature (NVIDIA cards), RAM, ping, session time, the clock
 - Only while a game is running (Steam, Battle.net, Epic, EA, Ubisoft, GOG, Riot, Xbox) - or always
+- Layout editor: your order, labels, colours, small graphs and text size
 - Any corner, one line or a column, three sizes, see-through background - and a different one per game if you like
 - Only when something's wrong: stats show up only while they're in trouble (GPU hot, ping high, RAM almost full)
 - Packet loss and jitter next to ping

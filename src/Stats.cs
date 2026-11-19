@@ -33,6 +33,8 @@ namespace HallowOverlay
         [DataMember] public bool LossJitter = true;      // packet loss and jitter next to ping
         [DataMember] public bool NowPlaying = true;      // the song / video playing (from Hallow Mixer)
         [DataMember] public bool GpuClocks = false, GpuPower = false, Vram = false;   // NVIDIA: core / memory clocks, power draw, VRAM
+        [DataMember] public List<StatStyle> Styles;      // layout editor: order, labels, colours, graphs (null = normal)
+        [DataMember] public string TextSize = "m";        // s, m, l, xl
         [DataMember] public bool FrameGraph = false; [DataMember] public string GraphSize = "m";   // frame-time graph: s, m, l
         [DataMember] public bool Server = true, Traffic = false;   // the game's server (region, ping, loss, stalls); the game's up / down traffic
         [DataMember] public bool AutoUpdate = true; [DataMember] public string LastUpdateCheck = "", ToldUpdate = "";   // look for updates once a day (always asks first)
@@ -49,12 +51,12 @@ namespace HallowOverlay
         {
             Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; TrayOnClose = true;
             OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
-            GpuClocks = GpuPower = Vram = FrameGraph = false; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; LastCrashShown = ""; AutoUpdate = true; LastUpdateCheck = ""; ToldUpdate = ""; Fps01 = false; LogCsv = false; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
+            GpuClocks = GpuPower = Vram = FrameGraph = false; Styles = null; TextSize = "m"; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; LastCrashShown = ""; AutoUpdate = true; LastUpdateCheck = ""; ToldUpdate = ""; Fps01 = false; LogCsv = false; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
         }
         [OnDeserialized] void Fix(StreamingContext c) { if (OffGames == null) OffGames = new List<string>(); }
 
         // A copy of the look for a game's own settings (no global lists inside).
-        public OverlaySettings LookCopy() { var l = (OverlaySettings)MemberwiseClone(); l.PerGame = null; l.OffGames = new List<string>(); return l; }
+        public OverlaySettings LookCopy() { var l = (OverlaySettings)MemberwiseClone(); l.PerGame = null; l.OffGames = new List<string>(); l.Styles = Styles == null ? null : Styles.Select(x => x.Copy()).ToList(); return l; }
         // The settings a game's own look is stored under (case-insensitive), or null.
         public string PerGameKey(string game)
         {

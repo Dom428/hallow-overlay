@@ -21,14 +21,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.12.0.0")]
-[assembly: AssemblyFileVersion("1.12.0.0")]
+[assembly: AssemblyVersion("1.13.0.0")]
+[assembly: AssemblyFileVersion("1.13.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.12";
+        public const string Version = "1.13";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -113,43 +113,54 @@ namespace HallowOverlay
         // msg: a short message from another Hallow app (flash, or a stronger remind); msgOnly: show just the message
         public static FrameworkElement Build(OverlaySettings s, Sample x, string game, TimeSpan? session, string msg, bool strong, bool msgOnly)
         {
-            var k = s.Scale; var items = new List<FrameworkElement>();
+            var k = s.Scale; var items = new List<KeyValuePair<string, FrameworkElement>>();
             if (msgOnly) { s = new OverlaySettings { Scale = s.Scale, Row = s.Row, Opacity = s.Opacity, MicWarn = false, Cpu = false, Gpu = false, GpuTemp = false, Ram = false, Ping = false, Clock = false, Session = false, Game = false, Fps = false, NowPlaying = false, Server = false, Traffic = false }; }
             bool bad = s.OnlyBad;   // only stats that are in trouble (and the MIC MUTED warning / messages)
-            Action<string, string, int> item = (icon, text, level) =>
+            var styles = Stats.Ordered(s); double tf = Stats.TextFactor(s.TextSize);
+            // id, icon, normal label, the value, 0 fine / 1 amber / 2 red
+            Action<string, string, string, string, int> item = (id, icon, label, value, level) =>
             {
                 if (bad && level == 0) return;
-                var col = level == 2 ? "#FF6B6B" : level == 1 ? "#F0BE5A" : "#ECE8F4";
+                var st = styles.FirstOrDefault(z => z.Id == id);
+                var own = st != null && st.Color != null ? st.Color : null;
+                var col = level == 2 ? "#FF6B6B" : level == 1 ? "#F0BE5A" : own ?? "#ECE8F4";
+                var lbl = st != null && st.Label != null ? st.Label : label;
+                if (id == "fps" && st != null && st.Label != null) value = value.Replace(" FPS", "");
                 var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = s.Row ? new Thickness(0, 0, 14 * k, 0) : new Thickness(0, 1, 0, 1) };
-                var ic = Icons.Make(icon, 12 * k, B(level == 0 ? "#A98BE0" : col)); ic.Margin = new Thickness(0, 0, 6 * k, 0); ic.VerticalAlignment = VerticalAlignment.Center;
+                var ic = Icons.Make(icon, 12 * k, B(level == 0 ? own ?? "#A98BE0" : col)); ic.Margin = new Thickness(0, 0, 6 * k, 0); ic.VerticalAlignment = VerticalAlignment.Center;
                 sp.Children.Add(ic);
-                sp.Children.Add(new TextBlock { Text = text, FontSize = 13 * k, FontWeight = FontWeights.SemiBold, Foreground = B(col), VerticalAlignment = VerticalAlignment.Center });
-                items.Add(sp);
+                sp.Children.Add(new TextBlock { Text = (lbl.Length > 0 ? lbl + " " : "") + value, FontSize = 13 * k * tf, FontWeight = FontWeights.SemiBold, Foreground = B(col), VerticalAlignment = VerticalAlignment.Center });
+                if (st != null && st.Graph)
+                {
+                    var g = StatHistory.Spark(id, 46 * k * tf, 13 * k * tf, B(level == 0 ? own ?? "#A98BE0" : col));
+                    if (g != null) { g.Margin = new Thickness(6 * k, 0, 0, 0); sp.Children.Add(g); }
+                }
+                items.Add(new KeyValuePair<string, FrameworkElement>(id, sp));
             };
-            if (s.Game && game != null && !bad) item("gamepad", game, 0);
-            if (x.BenchSeconds >= 0) item("chart-line", "BENCHMARK " + ((int)x.BenchSeconds / 60) + ":" + ((int)x.BenchSeconds % 60).ToString("00"), 1);
-            if (s.Session && session != null && !bad) item("stopwatch", session.Value.TotalHours >= 1 ? ((int)session.Value.TotalHours + ":" + session.Value.Minutes.ToString("00")) : session.Value.Minutes + " min", 0);
-            if (s.Fps && x.Fps >= 0) item("gauge-high", x.Fps.ToString("0") + " FPS" + (x.FpsLow >= 0 ? "  1% " + x.FpsLow.ToString("0") : "") + (s.Fps01 && x.FpsLow01 >= 0 ? "  0.1% " + x.FpsLow01.ToString("0") : ""), x.Fps < 30 ? 2 : x.Fps < 50 ? 1 : 0);
+            if (x.BenchSeconds >= 0) item("bench", "chart-line", "BENCHMARK", ((int)x.BenchSeconds / 60) + ":" + ((int)x.BenchSeconds % 60).ToString("00"), 1);
+            if (s.Game && game != null && !bad) item("game", "gamepad", "", game, 0);
+            if (s.Session && session != null && !bad) item("session", "stopwatch", "", session.Value.TotalHours >= 1 ? ((int)session.Value.TotalHours + ":" + session.Value.Minutes.ToString("00")) : session.Value.Minutes + " min", 0);
+            if (s.Fps && x.Fps >= 0) item("fps", "gauge-high", "", x.Fps.ToString("0") + " FPS" + (x.FpsLow >= 0 ? "  1% " + x.FpsLow.ToString("0") : "") + (s.Fps01 && x.FpsLow01 >= 0 ? "  0.1% " + x.FpsLow01.ToString("0") : ""), x.Fps < 30 ? 2 : x.Fps < 50 ? 1 : 0);
             if (s.FrameGraph && x.FrameMs != null && x.FrameCount >= 10)
             {
                 int spikes; var g = Graph(x.FrameMs, x.FrameCount, s.GraphSize, k, out spikes);
-                if (!bad || spikes > 0) { g.Margin = s.Row ? new Thickness(0, 0, 14 * k, 0) : new Thickness(0, 3, 0, 3); items.Add(g); }
+                if (!bad || spikes > 0) { g.Margin = s.Row ? new Thickness(0, 0, 14 * k, 0) : new Thickness(0, 3, 0, 3); items.Add(new KeyValuePair<string, FrameworkElement>("graph", g)); }
             }
-            if (s.Cpu && x.Cpu >= 0) item("microchip", "CPU " + x.Cpu.ToString("0") + "%", x.Cpu >= 90 ? 1 : 0);
-            if (s.Gpu && x.Gpu >= 0) item("display", "GPU " + x.Gpu.ToString("0") + "%", 0);
-            if (s.GpuTemp && x.GpuTemp >= 0) item("temperature-half", x.GpuTemp.ToString("0") + "°C", x.GpuTemp >= s.HotGpu + 7 ? 2 : x.GpuTemp >= s.HotGpu ? 1 : 0);
-            if (s.GpuClocks && x.GpuClock >= 0) item("wave-square", x.GpuClock.ToString("0") + (x.MemClock >= 0 ? " / " + x.MemClock.ToString("0") : "") + " MHz", 0);
+            if (s.Cpu && x.Cpu >= 0) item("cpu", "microchip", "CPU", x.Cpu.ToString("0") + "%", x.Cpu >= 90 ? 1 : 0);
+            if (s.Gpu && x.Gpu >= 0) item("gpu", "display", "GPU", x.Gpu.ToString("0") + "%", 0);
+            if (s.GpuTemp && x.GpuTemp >= 0) item("gputemp", "temperature-half", "", x.GpuTemp.ToString("0") + "\u00b0C", x.GpuTemp >= s.HotGpu + 7 ? 2 : x.GpuTemp >= s.HotGpu ? 1 : 0);
+            if (s.GpuClocks && x.GpuClock >= 0) item("clocks", "wave-square", "", x.GpuClock.ToString("0") + (x.MemClock >= 0 ? " / " + x.MemClock.ToString("0") : "") + " MHz", 0);
             if (s.GpuPower && x.PowerW >= 0)
             {
                 var pp = x.PowerLimitW > 0 ? x.PowerW / x.PowerLimitW * 100 : -1;
-                item("bolt", x.PowerW.ToString("0") + " W" + (pp >= 0 ? "  " + pp.ToString("0") + "%" : ""), pp >= 98 ? 1 : 0);   // at the limit: the card is power-limited
+                item("power", "bolt", "", x.PowerW.ToString("0") + " W" + (pp >= 0 ? "  " + pp.ToString("0") + "%" : ""), pp >= 98 ? 1 : 0);   // at the limit: the card is power-limited
             }
             if (s.Vram && x.VramUsedMB >= 0 && x.VramTotalMB > 0)
-                item("layer-group", "VRAM " + (x.VramUsedMB / 1024).ToString("0.0") + " / " + (x.VramTotalMB / 1024).ToString("0") + " GB", x.VramUsedMB / x.VramTotalMB >= 0.95 ? 1 : 0);
+                item("vram", "layer-group", "VRAM", (x.VramUsedMB / 1024).ToString("0.0") + " / " + (x.VramTotalMB / 1024).ToString("0") + " GB", x.VramUsedMB / x.VramTotalMB >= 0.95 ? 1 : 0);
             if (s.Ram && x.RamUsedGB >= 0)
             {
                 var pct = x.RamUsedGB / x.RamTotalGB * 100;
-                item("memory", x.RamUsedGB.ToString("0.0") + " / " + x.RamTotalGB.ToString("0") + " GB", pct > s.RamFull + 7 ? 2 : pct > s.RamFull ? 1 : 0);
+                item("ram", "memory", "", x.RamUsedGB.ToString("0.0") + " / " + x.RamTotalGB.ToString("0") + " GB", pct > s.RamFull + 7 ? 2 : pct > s.RamFull ? 1 : 0);
             }
             if (s.Ping)
             {
@@ -157,11 +168,11 @@ namespace HallowOverlay
                 var text = x.PingMs >= 0 ? x.PingMs.ToString("0") + " ms" : "no net";
                 if (s.LossJitter && x.LossPct >= 0)
                 {
-                    if (x.JitterMs >= 0) text += "  ±" + x.JitterMs.ToString("0");
+                    if (x.JitterMs >= 0) text += "  \u00b1" + x.JitterMs.ToString("0");
                     text += "  " + x.LossPct.ToString("0.#") + "% loss";
                     lv = Math.Max(lv, x.LossPct >= 5 ? 2 : x.LossPct >= 2 ? 1 : x.JitterMs >= 30 ? 1 : 0);
                 }
-                item("signal", text, lv);
+                item("ping", "signal", "", text, lv);
             }
             if (s.Server && x.ServerLabel != null)
             {
@@ -170,14 +181,15 @@ namespace HallowOverlay
                 if (x.Stalls > 0) text += "  " + x.Stalls + (x.Stalls == 1 ? " stall" : " stalls");
                 int lv = x.ServerMs > s.HighPing + 70 ? 2 : x.ServerMs > s.HighPing ? 1 : 0;
                 lv = Math.Max(lv, x.ServerLoss >= 5 ? 2 : x.ServerLoss >= 2 ? 1 : 0); if (x.Stalls >= 3) lv = Math.Max(lv, 2); else if (x.Stalls > 0) lv = Math.Max(lv, 1);
-                item("server", text, lv);
+                item("server", "server", "", text, lv);
             }
-            if (s.Traffic && x.UpKbps >= 0) item("arrow-right-arrow-left", "\u2191" + x.UpKbps.ToString("0") + "  \u2193" + x.DownKbps.ToString("0") + " kbps", 0);
-            if (s.NowPlaying && !string.IsNullOrEmpty(x.NowPlaying)) item("music", x.NowPlaying.Length > 48 ? x.NowPlaying.Substring(0, 47) + "\u2026" : x.NowPlaying, 0);
-            if (s.Clock) item("clock", DateTime.Now.ToString("HH:mm"), 0);
+            if (s.Traffic && x.UpKbps >= 0) item("traffic", "arrow-right-arrow-left", "", "\u2191" + x.UpKbps.ToString("0") + "  \u2193" + x.DownKbps.ToString("0") + " kbps", 0);
+            if (s.NowPlaying && !string.IsNullOrEmpty(x.NowPlaying)) item("nowplaying", "music", "", x.NowPlaying.Length > 48 ? x.NowPlaying.Substring(0, 47) + "\u2026" : x.NowPlaying, 0);
+            if (s.Clock) item("clock", "clock", "", DateTime.Now.ToString("HH:mm"), 0);
+            // the layout's order (the benchmark marker always first)
+            var order = styles.Select(z => z.Id).ToList();
             var list = new StackPanel { Orientation = s.Row ? Orientation.Horizontal : Orientation.Vertical };
-            foreach (var i in items) list.Children.Add(i);
-            var outer = new StackPanel { Orientation = s.Row ? Orientation.Horizontal : Orientation.Vertical };
+            foreach (var i in items.OrderBy(z => z.Key == "bench" ? -1 : order.IndexOf(z.Key))) list.Children.Add(i.Value);            var outer = new StackPanel { Orientation = s.Row ? Orientation.Horizontal : Orientation.Vertical };
             if (!string.IsNullOrEmpty(msg))
             {
                 var mb = new Border { Background = B(strong ? "#F07820" : "#7A4FD0"), CornerRadius = new CornerRadius(8 * k), Padding = new Thickness(10 * k, 4 * k, 10 * k, 4 * k), Margin = s.Row ? new Thickness(0, 0, 10 * k, 0) : new Thickness(0, 0, 0, 6 * k) };
@@ -589,6 +601,9 @@ namespace HallowOverlay
             }
             if (cur != null) rec.Add(x, srvRegion, srvIp, net.Running ? net.Finder.TotalStalls : -1, DateTime.Now);
             if (benchOn) x.BenchSeconds = (DateTime.Now - benchStart).TotalSeconds;
+            // the last minute of each stat, for the layout's small graphs
+            StatHistory.Add("fps", x.Fps); StatHistory.Add("cpu", x.Cpu); StatHistory.Add("gpu", x.Gpu); StatHistory.Add("gputemp", x.GpuTemp); StatHistory.Add("clocks", x.GpuClock);
+            StatHistory.Add("power", x.PowerW); StatHistory.Add("vram", x.VramUsedMB); StatHistory.Add("ram", x.RamUsedGB); StatHistory.Add("ping", x.PingMs); StatHistory.Add("server", x.ServerLabel != null ? x.ServerMs : -1);
             if (S.LogCsv && cur != null) statLog.Write(game, recNow, x, srvRegion ?? (S.HideServerIp ? null : srvIp), DateTime.Now); else statLog.Close();
             bool off = IsOff(game);
             bool want = shown && !off && (!S.OnlyInGame || cur != null);
@@ -743,7 +758,7 @@ namespace HallowOverlay
         }
 
         // ---- per-game looks
-        string editGame; bool filling; ComboBox forBox; CheckBox ownBox; StackPanel lookHost;
+        string editGame; bool filling; LayoutWindow layoutWin; ComboBox forBox; CheckBox ownBox; StackPanel lookHost;
         OverlaySettings EditLook { get { var k = S.PerGameKey(editGame); return k != null ? S.PerGame[k] : S; } }
 
         void FillGames()
@@ -802,6 +817,13 @@ namespace HallowOverlay
             sw("GPU clocks", T.GpuClocks, v => T.GpuClocks = v); sw("GPU power", T.GpuPower, v => T.GpuPower = v); sw("VRAM", T.Vram, v => T.Vram = v);
             sw("Frame-time graph", T.FrameGraph, v => T.FrameGraph = v);
             lookHost.Children.Add(grid);
+            var lay = new Button { Content = "Layout editor - order, labels, colours, graphs, text size", Style = (Style)FindResource("Btn"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 10, 0, 0) };
+            lay.Click += (s, e) =>
+            {
+                if (layoutWin != null && layoutWin.IsLoaded) layoutWin.Close();
+                layoutWin = new LayoutWindow(T, editGame == null ? "all games" : editGame, () => { S.Save(); Refresh(); }) { Owner = this }; layoutWin.Show();
+            };
+            lookHost.Children.Add(lay);
             var gs = chips("Graph size", new[] { Tuple.Create("s", "Small"), Tuple.Create("m", "Medium"), Tuple.Create("l", "Large") }, () => T.GraphSize ?? "m", v => T.GraphSize = v);
             gs.Margin = new Thickness(0, 8, 0, 0); lookHost.Children.Add(gs);
             var bad = new CheckBox { Content = new TextBlock { Text = "Only when something's wrong: a stat shows up only while it's in trouble (hot GPU, high ping or packet loss, RAM almost full, low FPS, busy CPU)", TextWrapping = TextWrapping.Wrap },
@@ -924,6 +946,15 @@ namespace HallowOverlay
             Snap.Save(new MatchHistoryWindow(new List<GameMatch>(), true), System.IO.Path.Combine(dir, "history-empty.png"), 900, 300);
             { var ff = FakeFrames().ToList(); for (int i = 0; i < 6; i++) ff.AddRange(FakeFrames()); var br = BenchReport.Make(ff, "Delta Force", new DateTime(2026, 11, 19, 21, 4, 0), "DirectX"); br.SavePng(dir); br.SaveCsv(dir);
               var bx = x.Copy(); bx.BenchSeconds = 42; bx.MicMuted = false; one("bench-panel.png", Panel.Build(S, bx, "Delta Force", null), 1000); one("bench-flash.png", Panel.Build(S, x, null, null, br.Summary(), false, true), 760); }
+            {   // 1.13: layout editor and a styled panel
+                var rnd = new Random(3); for (int i = 0; i < 60; i++) { StatHistory.Add("fps", 140 + rnd.Next(-12, 12) - (i == 41 ? 50 : 0)); StatHistory.Add("cpu", 30 + rnd.Next(0, 25)); StatHistory.Add("gputemp", 66 + i / 10.0); StatHistory.Add("ping", 18 + rnd.Next(0, 5) + (i == 50 ? 30 : 0)); }
+                var ly = S.LookCopy(); ly.TextSize = "l"; ly.MicWarn = false;
+                ly.Styles = new List<StatStyle> { new StatStyle { Id = "fps", Label = "FPS", Color = "#4ADE80", Graph = true }, new StatStyle { Id = "ping", Graph = true, Color = "#7DD3FC" }, new StatStyle { Id = "cpu", Label = "Processor", Graph = true }, new StatStyle { Id = "gputemp", Color = "#FB923C" } };
+                var lx = x.Copy(); lx.MicMuted = false;
+                one("layout-panel.png", Panel.Build(ly, lx, "Delta Force", TimeSpan.FromMinutes(42)), 1300);
+                ly.Row = false; one("layout-column.png", Panel.Build(ly, lx, "Delta Force", TimeSpan.FromMinutes(42)), 340);
+                ly.Row = true; Snap.Save(new LayoutWindow(ly, "Delta Force", () => { }), System.IO.Path.Combine(dir, "layout-editor.png"), 720, 0);
+            }
             Snap.Save(new CrashNotice(System.IO.Path.Combine(Crash.Dir, "2026-11-19 20-14-03.txt")), System.IO.Path.Combine(dir, "crash-notice.png"), 470, 0);
             S.Row = false; x.MicMuted = false;
             var w2 = new Window { Background = Brushes.Transparent, Content = Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)), FontFamily = new FontFamily("Segoe UI") };

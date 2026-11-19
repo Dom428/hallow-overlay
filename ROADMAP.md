@@ -17,11 +17,9 @@
 | **1.10** | Live FPS, 1% low, ping and server region (never the IP) in status for Hallow Remote's Live stats tab - every 2 s while a game runs, cleared when it ends |
 | **1.11** | Updates itself from GitHub (asks first, SHA-256 checked); FPS for Vulkan / OpenGL games from the graphics kernel's present events (no admin); 0.1% lows |
 | **1.12** | Benchmark mode (Ctrl+Shift+F9): average FPS, 1% / 0.1% lows, frame-time percentiles, stutters and a chart, saved as PNG + CSV; optional CSV log of every stat |
+| **1.13** | Layout editor: order of the stats, own labels, a colour per stat, text or text + a small graph of the last minute, text size (per game too) |
 
 ## Next
-
-### 1.13 - Layout editor
-- Order of the stats, your own labels, font size, a colour per stat, and text or a small graph per stat
 
 ### Fixes from real use
 - Check it over real games in borderless / windowed mode, and that the exclusive-fullscreen notice shows up for games that really use exclusive fullscreen (needs real games - not testable here)
