@@ -7,13 +7,9 @@
 | **1.0** | See-through panel you can click through: big MIC MUTED warning (from Hallow Mixer), CPU, GPU load and temperature, RAM, ping, session time; corner and size choices; Ctrl+Shift+O shows and hides it |
 | **1.1** | Tells you when a game is in exclusive fullscreen (use borderless); Hallow family link: named pipe with show / hide / toggle / flash / remind / game-on / game-off, `--cmd`, status.json; What's new window |
 | **1.2** | FPS and 1% lows from Windows' own frame events (the ETW events PresentMon reads: DXGI / D3D9 presents) - no admin prompt; works for admins and the Performance Log Users group, hidden otherwise |
+| **1.3** | Own corner, size and stats per game; only show a stat while it's in trouble (your own limits for GPU temperature, ping, RAM); packet loss and jitter next to ping |
 
 ## Next
-
-### 1.3 - Smarter panel
-- Position, size and which stats per game
-- Only show a stat when it's bad (GPU hot, ping high, RAM almost full)
-- Packet loss and jitter next to ping
 
 ### 1.4 - Hallow family
 - "Clip saved" flash from Hallow Clips

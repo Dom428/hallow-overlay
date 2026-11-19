@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.3", new[] { "Settings for: give a game its own corner, size and stats", "Only when something's wrong: stats show up only while they're in trouble (you set the limits)", "Packet loss and jitter next to ping" }),
             Tuple.Create("1.2", new[] { "FPS and 1% lows for the game you're playing, read from Windows' own frame events (like PresentMon) - no admin prompt" }),
             Tuple.Create("1.1", new[] { "Tells you when a game is in exclusive fullscreen (Windows can't draw over that - use borderless)", "Other Hallow apps can show and hide the overlay and put short messages on it" }),
         };

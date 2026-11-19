@@ -20,14 +20,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.2";
+        public const string Version = "1.3";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -77,8 +77,10 @@ namespace HallowOverlay
         {
             var k = s.Scale; var items = new List<FrameworkElement>();
             if (msgOnly) { s = new OverlaySettings { Scale = s.Scale, Row = s.Row, Opacity = s.Opacity, MicWarn = false, Cpu = false, Gpu = false, GpuTemp = false, Ram = false, Ping = false, Clock = false, Session = false, Game = false, Fps = false }; }
+            bool bad = s.OnlyBad;   // only stats that are in trouble (and the MIC MUTED warning / messages)
             Action<string, string, int> item = (icon, text, level) =>
             {
+                if (bad && level == 0) return;
                 var col = level == 2 ? "#FF6B6B" : level == 1 ? "#F0BE5A" : "#ECE8F4";
                 var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = s.Row ? new Thickness(0, 0, 14 * k, 0) : new Thickness(0, 1, 0, 1) };
                 var ic = Icons.Make(icon, 12 * k, B(level == 0 ? "#A98BE0" : col)); ic.Margin = new Thickness(0, 0, 6 * k, 0); ic.VerticalAlignment = VerticalAlignment.Center;
@@ -86,14 +88,29 @@ namespace HallowOverlay
                 sp.Children.Add(new TextBlock { Text = text, FontSize = 13 * k, FontWeight = FontWeights.SemiBold, Foreground = B(col), VerticalAlignment = VerticalAlignment.Center });
                 items.Add(sp);
             };
-            if (s.Game && game != null) item("gamepad", game, 0);
-            if (s.Session && session != null) item("stopwatch", session.Value.TotalHours >= 1 ? ((int)session.Value.TotalHours + ":" + session.Value.Minutes.ToString("00")) : session.Value.Minutes + " min", 0);
+            if (s.Game && game != null && !bad) item("gamepad", game, 0);
+            if (s.Session && session != null && !bad) item("stopwatch", session.Value.TotalHours >= 1 ? ((int)session.Value.TotalHours + ":" + session.Value.Minutes.ToString("00")) : session.Value.Minutes + " min", 0);
             if (s.Fps && x.Fps >= 0) item("gauge-high", x.Fps.ToString("0") + " FPS" + (x.FpsLow >= 0 ? "  1% " + x.FpsLow.ToString("0") : ""), x.Fps < 30 ? 2 : x.Fps < 50 ? 1 : 0);
             if (s.Cpu && x.Cpu >= 0) item("microchip", "CPU " + x.Cpu.ToString("0") + "%", x.Cpu >= 90 ? 1 : 0);
             if (s.Gpu && x.Gpu >= 0) item("display", "GPU " + x.Gpu.ToString("0") + "%", 0);
-            if (s.GpuTemp && x.GpuTemp >= 0) item("temperature-half", x.GpuTemp.ToString("0") + "°C", x.GpuTemp >= 85 ? 2 : x.GpuTemp >= 78 ? 1 : 0);
-            if (s.Ram && x.RamUsedGB >= 0) item("memory", x.RamUsedGB.ToString("0.0") + " / " + x.RamTotalGB.ToString("0") + " GB", x.RamUsedGB / x.RamTotalGB > 0.92 ? 2 : x.RamUsedGB / x.RamTotalGB > 0.85 ? 1 : 0);
-            if (s.Ping) item("signal", x.PingMs >= 0 ? x.PingMs.ToString("0") + " ms" : "no net", x.PingMs < 0 ? 2 : x.PingMs > 150 ? 2 : x.PingMs > 80 ? 1 : 0);
+            if (s.GpuTemp && x.GpuTemp >= 0) item("temperature-half", x.GpuTemp.ToString("0") + "°C", x.GpuTemp >= s.HotGpu + 7 ? 2 : x.GpuTemp >= s.HotGpu ? 1 : 0);
+            if (s.Ram && x.RamUsedGB >= 0)
+            {
+                var pct = x.RamUsedGB / x.RamTotalGB * 100;
+                item("memory", x.RamUsedGB.ToString("0.0") + " / " + x.RamTotalGB.ToString("0") + " GB", pct > s.RamFull + 7 ? 2 : pct > s.RamFull ? 1 : 0);
+            }
+            if (s.Ping)
+            {
+                int lv = x.PingMs < 0 ? 2 : x.PingMs > s.HighPing + 70 ? 2 : x.PingMs > s.HighPing ? 1 : 0;
+                var text = x.PingMs >= 0 ? x.PingMs.ToString("0") + " ms" : "no net";
+                if (s.LossJitter && x.LossPct >= 0)
+                {
+                    if (x.JitterMs >= 0) text += "  ±" + x.JitterMs.ToString("0");
+                    text += "  " + x.LossPct.ToString("0.#") + "% loss";
+                    lv = Math.Max(lv, x.LossPct >= 5 ? 2 : x.LossPct >= 2 ? 1 : x.JitterMs >= 30 ? 1 : 0);
+                }
+                item("signal", text, lv);
+            }
             if (s.Clock) item("clock", DateTime.Now.ToString("HH:mm"), 0);
             var list = new StackPanel { Orientation = s.Row ? Orientation.Horizontal : Orientation.Vertical };
             foreach (var i in items) list.Children.Add(i);
@@ -278,6 +295,7 @@ namespace HallowOverlay
 
         void Refresh()
         {
+            if (Snap.On) return;
             var x = sampler.Latest; var cur = Current;
             var game = cur == null ? null : (cur.Game.Parent ?? cur.Game).Name;
             TimeSpan? session = cur == null ? (TimeSpan?)null : DateTime.Now - cur.Since;
@@ -286,17 +304,21 @@ namespace HallowOverlay
             bool off = IsOff(game);
             bool want = shown && !off && (!S.OnlyInGame || cur != null);
             if (msg != null && DateTime.Now >= msgUntil) msg = null;
+            var look = S.LookFor(game);
             if (want || msg != null)
             {
-                ov.Content = Panel.Build(S, x, game, session, msg, msgStrong, !want);   // messages still show briefly when the panel is hidden
+                ov.Content = Panel.Build(look, x, game, session, msg, msgStrong, !want);   // messages still show briefly when the panel is hidden
                 if (!ov.IsVisible) ov.Show();
-                ov.Place(S.Corner);
+                ov.Place(look.Corner);
             }
             else if (ov.IsVisible) ov.Hide();
             if (IsVisible)
             {
                 var px = x; if (px.Fps < 0 && !fps.Denied) { px = x.Copy(); px.Fps = 144; px.FpsLow = 97; }   // what it looks like in a game
-                preview.Child = Fit(Panel.Build(S, px, game ?? "Delta Force", session ?? TimeSpan.FromMinutes(42)));
+                var pl = editGame != null ? S.LookFor(editGame) : look;
+                preview.HorizontalAlignment = pl.Corner.EndsWith("r") ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+                preview.VerticalAlignment = pl.Corner.StartsWith("b") ? VerticalAlignment.Bottom : VerticalAlignment.Top;
+                preview.Child = Fit(Panel.Build(pl, px, editGame ?? game ?? "Delta Force", session ?? TimeSpan.FromMinutes(42)));
                 foot.Text = FootText();
                 state.Text = exclusiveGame != null && exclusiveGame == game ? ExclusiveNote(game) :
                     !shown ? "Hidden - press Ctrl+Shift+O (or use the tray menu) to show it again." :
@@ -330,47 +352,43 @@ namespace HallowOverlay
             sp.Children.Add(stage);
             state = new TextBlock { Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(2, 0, 0, 14), TextWrapping = TextWrapping.Wrap };
             sp.Children.Add(state);
-            Action place = () =>
+            // which look is being edited: every game, or one game's own
+            var forRow = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+            forRow.Children.Add(new TextBlock { Text = "Settings for", Width = 120, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold }); DockPanel.SetDock(forRow.Children[0], Dock.Left);
+            forBox = new ComboBox { Style = (Style)FindResource("Combo"), Width = 240, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+            FillGames(); forBox.SelectedIndex = 0;
+            forBox.DropDownOpened += (s, e) => FillGames();
+            forBox.SelectionChanged += (s, e) => { if (filling) return; editGame = forBox.SelectedIndex <= 0 ? null : forBox.SelectedItem as string; BuildLook(); Refresh(); };
+            ownBox = new CheckBox { Content = "Own corner, size and stats for this game", Style = (Style)FindResource("Switch"), Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            ownBox.Click += (s, e) =>
             {
-                preview.HorizontalAlignment = S.Corner.EndsWith("r") ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-                preview.VerticalAlignment = S.Corner.StartsWith("b") ? VerticalAlignment.Bottom : VerticalAlignment.Top;
+                if (editGame == null) return;
+                var k = S.PerGameKey(editGame);
+                if (ownBox.IsChecked == true) { if (k == null) S.PerGame[editGame] = S.LookCopy(); }
+                else if (k != null) S.PerGame.Remove(k);
+                S.Save(); BuildLook(); Refresh();
             };
-            place();
-            Func<string, IEnumerable<Tuple<string, string>>, Func<string>, Action<string>, FrameworkElement> chips = (label, opts, get, set) =>
+            var fr = new StackPanel { Orientation = Orientation.Horizontal }; fr.Children.Add(forBox); fr.Children.Add(ownBox);
+            forRow.Children.Add(fr); sp.Children.Add(forRow);
+            lookHost = new StackPanel(); sp.Children.Add(lookHost);
+            BuildLook();
+            // when a stat counts as "in trouble" (all games)
+            var lim = new DockPanel { Margin = new Thickness(0, 10, 0, 0) };
+            lim.Children.Add(new TextBlock { Text = "In trouble from", Width = 120, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold }); DockPanel.SetDock(lim.Children[0], Dock.Left);
+            var lp = new StackPanel { Orientation = Orientation.Horizontal };
+            Action<string, string, Func<double>, Action<double>, double, double> num = (before, after, get, set, min, max) =>
             {
-                var row = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-                row.Children.Add(new TextBlock { Text = label, Width = 120, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold });
-                DockPanel.SetDock(row.Children[0], Dock.Left);
-                var wp = new WrapPanel();
-                foreach (var o in opts)
-                {
-                    var key = o.Item1; var c = new ToggleButton { Content = o.Item2, Style = (Style)FindResource("Chip"), Margin = new Thickness(0, 0, 6, 0), IsChecked = get() == key, Padding = new Thickness(12, 5, 12, 5) };
-                    c.Click += (s, e) => { set(key); S.Save(); foreach (ToggleButton x in wp.Children) x.IsChecked = x == c; place(); Refresh(); };
-                    wp.Children.Add(c);
-                }
-                row.Children.Add(wp); return row;
+                lp.Children.Add(new TextBlock { Text = before, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+                var tb = new TextBox { Style = (Style)FindResource("Field"), Width = 56, Text = get().ToString("0"), VerticalAlignment = VerticalAlignment.Center };
+                tb.TextChanged += (s, e) => { double v; if (double.TryParse(tb.Text, out v) && v >= min && v <= max) { set(v); S.Save(); Refresh(); } };
+                tb.LostFocus += (s, e) => tb.Text = get().ToString("0");
+                lp.Children.Add(tb);
+                lp.Children.Add(new TextBlock { Text = after, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 18, 0), Foreground = (Brush)FindResource("Muted") });
             };
-            sp.Children.Add(chips("Corner", new[] { Tuple.Create("tl", "Top left"), Tuple.Create("tr", "Top right"), Tuple.Create("bl", "Bottom left"), Tuple.Create("br", "Bottom right") }, () => S.Corner, v => S.Corner = v));
-            sp.Children.Add(chips("Layout", new[] { Tuple.Create("row", "One line"), Tuple.Create("col", "Column") }, () => S.Row ? "row" : "col", v => S.Row = v == "row"));
-            sp.Children.Add(chips("Size", new[] { Tuple.Create("0.85", "Small"), Tuple.Create("1", "Medium"), Tuple.Create("1.25", "Large") },
-                () => S.Scale < 0.95 ? "0.85" : S.Scale > 1.1 ? "1.25" : "1", v => S.Scale = double.Parse(v, System.Globalization.CultureInfo.InvariantCulture)));
-            var op = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
-            op.Children.Add(new TextBlock { Text = "Background", Width = 120, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold }); DockPanel.SetDock(op.Children[0], Dock.Left);
-            var sl = new Slider { Style = (Style)FindResource("HFader"), Minimum = 0.2, Maximum = 1, Value = S.Opacity, Foreground = B("#F07820"), VerticalAlignment = VerticalAlignment.Center, Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
-            sl.ValueChanged += (s, e) => { S.Opacity = Math.Round(sl.Value, 2); S.Save(); Refresh(); };
-            op.Children.Add(sl); sp.Children.Add(op);
-            sp.Children.Add(new TextBlock { Text = "Show", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 6) });
-            var grid = new UniformGrid { Columns = 3 };
-            Action<string, bool, Action<bool>> sw = (text, on, set) =>
-            {
-                var c = new CheckBox { Content = text, IsChecked = on, Style = (Style)FindResource("Switch"), Margin = new Thickness(0, 4, 10, 4) };
-                c.Click += (s, e) => { set(c.IsChecked == true); S.Save(); Refresh(); }; grid.Children.Add(c);
-            };
-            sw("MIC MUTED warning", S.MicWarn, v => S.MicWarn = v); sw("CPU", S.Cpu, v => S.Cpu = v); sw("GPU load", S.Gpu, v => S.Gpu = v);
-            sw("GPU temperature", S.GpuTemp, v => S.GpuTemp = v); sw("RAM", S.Ram, v => S.Ram = v); sw("Ping", S.Ping, v => S.Ping = v);
-            sw("Session time", S.Session, v => S.Session = v); sw("Clock", S.Clock, v => S.Clock = v); sw("Game name", S.Game, v => S.Game = v);
-            sw("FPS and 1% low", S.Fps, v => S.Fps = v);
-            sp.Children.Add(grid);
+            num("GPU", "°C", () => S.HotGpu, v => S.HotGpu = v, 40, 110);
+            num("Ping", "ms", () => S.HighPing, v => S.HighPing = v, 10, 1000);
+            num("RAM", "% used", () => S.RamFull, v => S.RamFull = v, 30, 99);
+            lim.Children.Add(lp); sp.Children.Add(lim);
             var more = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
             Action<string, bool, Action<bool>> sw2 = (text, on, set) =>
             {
@@ -385,6 +403,70 @@ namespace HallowOverlay
             sp.Children.Add(foot);
             sp.Children.Add(new TextBlock { Text = "Hallow Overlay " + Program.Version + "  -  icons: Font Awesome Free (CC BY 4.0)", Foreground = (Brush)FindResource("Muted"), FontSize = 11, Margin = new Thickness(0, 8, 0, 0) });
             return new ScrollViewer { Content = sp, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        }
+
+        // ---- per-game looks
+        string editGame; bool filling; ComboBox forBox; CheckBox ownBox; StackPanel lookHost;
+        OverlaySettings EditLook { get { var k = S.PerGameKey(editGame); return k != null ? S.PerGame[k] : S; } }
+
+        void FillGames()
+        {
+            filling = true;
+            var names = games.Select(g => g.Name).Concat(S.PerGame.Keys).Where(n => !string.IsNullOrEmpty(n)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+            var cur = Current; if (cur != null) { var n = (cur.Game.Parent ?? cur.Game).Name; names.RemoveAll(x => string.Equals(x, n, StringComparison.OrdinalIgnoreCase)); names.Insert(0, n); }
+            var sel = editGame;
+            forBox.Items.Clear(); forBox.Items.Add("All games");
+            foreach (var n in names) forBox.Items.Add(n);
+            forBox.SelectedIndex = sel == null ? 0 : Math.Max(0, names.FindIndex(x => string.Equals(x, sel, StringComparison.OrdinalIgnoreCase)) + 1);
+            filling = false;
+        }
+
+        // Corner, layout, size, background and which stats - for every game, or for the game picked above.
+        void BuildLook()
+        {
+            lookHost.Children.Clear();
+            var T = EditLook; bool own = editGame != null && S.PerGameKey(editGame) != null;
+            ownBox.Visibility = editGame == null ? Visibility.Collapsed : Visibility.Visible; ownBox.IsChecked = own;
+            lookHost.IsEnabled = editGame == null || own; lookHost.Opacity = lookHost.IsEnabled ? 1 : 0.45;
+            Func<string, IEnumerable<Tuple<string, string>>, Func<string>, Action<string>, FrameworkElement> chips = (label, opts, get, set) =>
+            {
+                var row = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+                row.Children.Add(new TextBlock { Text = label, Width = 120, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold });
+                DockPanel.SetDock(row.Children[0], Dock.Left);
+                var wp = new WrapPanel();
+                foreach (var o in opts)
+                {
+                    var key = o.Item1; var c = new ToggleButton { Content = o.Item2, Style = (Style)FindResource("Chip"), Margin = new Thickness(0, 0, 6, 0), IsChecked = get() == key, Padding = new Thickness(12, 5, 12, 5) };
+                    c.Click += (s, e) => { set(key); S.Save(); foreach (ToggleButton x in wp.Children) x.IsChecked = x == c; Refresh(); };
+                    wp.Children.Add(c);
+                }
+                row.Children.Add(wp); return row;
+            };
+            lookHost.Children.Add(chips("Corner", new[] { Tuple.Create("tl", "Top left"), Tuple.Create("tr", "Top right"), Tuple.Create("bl", "Bottom left"), Tuple.Create("br", "Bottom right") }, () => T.Corner, v => T.Corner = v));
+            lookHost.Children.Add(chips("Layout", new[] { Tuple.Create("row", "One line"), Tuple.Create("col", "Column") }, () => T.Row ? "row" : "col", v => T.Row = v == "row"));
+            lookHost.Children.Add(chips("Size", new[] { Tuple.Create("0.85", "Small"), Tuple.Create("1", "Medium"), Tuple.Create("1.25", "Large") },
+                () => T.Scale < 0.95 ? "0.85" : T.Scale > 1.1 ? "1.25" : "1", v => T.Scale = double.Parse(v, System.Globalization.CultureInfo.InvariantCulture)));
+            var op = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+            op.Children.Add(new TextBlock { Text = "Background", Width = 120, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold }); DockPanel.SetDock(op.Children[0], Dock.Left);
+            var sl = new Slider { Style = (Style)FindResource("HFader"), Minimum = 0.2, Maximum = 1, Value = T.Opacity, Foreground = B("#F07820"), VerticalAlignment = VerticalAlignment.Center, Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
+            sl.ValueChanged += (s, e) => { T.Opacity = Math.Round(sl.Value, 2); S.Save(); Refresh(); };
+            op.Children.Add(sl); lookHost.Children.Add(op);
+            lookHost.Children.Add(new TextBlock { Text = "Show", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 6) });
+            var grid = new UniformGrid { Columns = 3 };
+            Action<string, bool, Action<bool>> sw = (text, on, set) =>
+            {
+                var c = new CheckBox { Content = text, IsChecked = on, Style = (Style)FindResource("Switch"), Margin = new Thickness(0, 4, 10, 4) };
+                c.Click += (s, e) => { set(c.IsChecked == true); S.Save(); Refresh(); }; grid.Children.Add(c);
+            };
+            sw("MIC MUTED warning", T.MicWarn, v => T.MicWarn = v); sw("CPU", T.Cpu, v => T.Cpu = v); sw("GPU load", T.Gpu, v => T.Gpu = v);
+            sw("GPU temperature", T.GpuTemp, v => T.GpuTemp = v); sw("RAM", T.Ram, v => T.Ram = v); sw("Ping", T.Ping, v => T.Ping = v);
+            sw("Session time", T.Session, v => T.Session = v); sw("Clock", T.Clock, v => T.Clock = v); sw("Game name", T.Game, v => T.Game = v);
+            sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v);
+            lookHost.Children.Add(grid);
+            var bad = new CheckBox { Content = new TextBlock { Text = "Only when something's wrong: a stat shows up only while it's in trouble (hot GPU, high ping or packet loss, RAM almost full, low FPS, busy CPU)", TextWrapping = TextWrapping.Wrap },
+                IsChecked = T.OnlyBad, Style = (Style)FindResource("Switch"), Margin = new Thickness(0, 8, 0, 0) };
+            bad.Click += (s, e) => { T.OnlyBad = bad.IsChecked == true; S.Save(); Refresh(); };
+            lookHost.Children.Add(bad);
         }
 
         string FootText()
@@ -430,6 +512,21 @@ namespace HallowOverlay
             Action<string, FrameworkElement, double> one = (name, el, width) => Snap.Save(new Window { Background = Brushes.Transparent, Content = el, FontFamily = new FontFamily("Segoe UI") }, System.IO.Path.Combine(dir, name), width, 0);
             one("flash.png", Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42), "Clip saved", false, false), 760);
             one("remind-only.png", Panel.Build(S, x, null, null, "Time for a break - you've played 2 hours", true, true), 760);
+            // 1.3: loss and jitter, only-when-wrong, a game's own look in the settings
+            var y = x.Copy(); y.LossPct = 3.3; y.JitterMs = 12; y.PingMs = 96; y.GpuTemp = 84; y.MicMuted = false;
+            one("loss-jitter.png", Panel.Build(S, y, "Delta Force", TimeSpan.FromMinutes(42)), 900);
+            var b = S.LookCopy(); b.OnlyBad = true;
+            one("only-bad.png", Panel.Build(b, y, "Delta Force", TimeSpan.FromMinutes(42)), 900);
+            S.PerGame["Delta Force"] = S.LookCopy(); S.PerGame["Delta Force"].Corner = "br"; S.PerGame["Delta Force"].Row = false; S.PerGame["Delta Force"].Clock = false;
+            games = new List<Game> { new Game { Id = "1", Name = "Delta Force" }, new Game { Id = "2", Name = "Deadlock" } };
+            FillGames(); forBox.SelectedIndex = 1;   // -> BuildLook for Delta Force
+            var pl = S.LookFor("Delta Force");
+            preview.HorizontalAlignment = HorizontalAlignment.Right; preview.VerticalAlignment = VerticalAlignment.Bottom;
+            preview.Child = Fit(Panel.Build(pl, x, "Delta Force", TimeSpan.FromMinutes(42)));
+            state.Text = "Showing over Delta Force."; state.Foreground = (Brush)FindResource("Muted");
+            Snap.Save(this, System.IO.Path.Combine(dir, "settings-pergame.png"), 760, 0);
+            forBox.SelectedIndex = 2;   // Deadlock: uses the normal look (greyed out)
+            Snap.Save(this, System.IO.Path.Combine(dir, "settings-pergame-off.png"), 760, 0);
             S.Row = false; x.MicMuted = false;
             var w2 = new Window { Background = Brushes.Transparent, Content = Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)), FontFamily = new FontFamily("Segoe UI") };
             Snap.Save(w2, System.IO.Path.Combine(dir, "column.png"), 220, 0);
