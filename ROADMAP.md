@@ -14,6 +14,7 @@
 | **1.7** | Match summary for every game session (FPS, ping, loss, stalls, servers / regions, temperatures, load, RAM) in matches.json; one-line summary on the panel when the game closes; Match history window with a per-game filter and a Servers view; last 5 in status.json |
 | **1.8** | Hallow accent colour from Hallow Toolkit (live, "Use the Hallow accent"; warnings stay red / amber); crash reports kept on this PC with a notice next time and `lastCrash` in status - nothing sent anywhere |
 | **1.9** | GPU core / memory clocks, power draw (W and % of the limit) and VRAM; frame-time graph of the last 5 s with spikes in red (Small / Medium / Large, one geometry per refresh); average GPU power and peak VRAM in match summaries; nvidia-smi always ends with Overlay |
+| **1.10** | Live FPS, 1% low, ping and server region (never the IP) in status for Hallow Remote's Live stats tab - every 2 s while a game runs, cleared when it ends |
 
 ## Next
 

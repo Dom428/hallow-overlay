@@ -21,14 +21,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.9.0.0")]
-[assembly: AssemblyFileVersion("1.9.0.0")]
+[assembly: AssemblyVersion("1.10.0.0")]
+[assembly: AssemblyFileVersion("1.10.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.9";
+        public const string Version = "1.10";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -261,6 +261,7 @@ namespace HallowOverlay
             };
             if (Snap.On) return;
             try { games = Library.Scan(new List<Game>()); } catch { }
+            AddTestGame();
             sampler.PingHost = S.PingHost; sampler.Start();
             SetupTray();
             // hotkey: Ctrl+Shift+O on this window's handle (it exists even while the window is hidden)
@@ -269,7 +270,7 @@ namespace HallowOverlay
             HwndSource.FromHwnd(hwnd).AddHook((IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) => { if (msg == 0x0312 && wp.ToInt32() == 1) { Toggle(); handled = true; } return IntPtr.Zero; });
             tick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) }; tick.Tick += (s, e) => Refresh(); tick.Start();
             poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) }; poll.Tick += (s, e) => { try { tracker.Poll(games.Concat(games.SelectMany(g => g.Alts)).ToList()); } catch { } CheckExclusive(); RunFps(); RunNet(); }; poll.Start();
-            var rescan = new DispatcherTimer { Interval = TimeSpan.FromMinutes(10) }; rescan.Tick += (s, e) => { try { games = Library.Scan(new List<Game>()); } catch { } }; rescan.Start();
+            var rescan = new DispatcherTimer { Interval = TimeSpan.FromMinutes(10) }; rescan.Tick += (s, e) => { try { games = Library.Scan(new List<Game>()); } catch { } AddTestGame(); }; rescan.Start();
             msgTimer = new DispatcherTimer(); msgTimer.Tick += (s, e) => { msgTimer.Stop(); Refresh(); };
             Link.Serve(Dispatcher, OnCommand);
             Accent.Watch(Dispatcher, ApplyAccent);
@@ -416,8 +417,10 @@ namespace HallowOverlay
         }
         string StatusJson()
         {
-            return Link.Json(new Dictionary<string, object> { { "app", "Overlay" }, { "version", Program.Version }, { "updated", DateTime.Now.ToString("s") },
-                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted }, { "matches", matches.Take(5).Select(m => m.Short()).ToArray() }, { "lastCrash", LastCrashIso() } });
+            var d = new Dictionary<string, object> { { "app", "Overlay" }, { "version", Program.Version }, { "updated", DateTime.Now.ToString("s") },
+                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted }, { "matches", matches.Take(5).Select(m => m.Short()).ToArray() }, { "lastCrash", LastCrashIso() } };
+            if (live != null) d["live"] = live;   // Hallow Remote's Live stats tab
+            return Link.Json(d);
         }
         static string LastCrashIso() { var l = Crash.Last(); return l == null ? null : l.Value.ToString("s"); }
         void WriteStatus(bool force)
@@ -477,7 +480,7 @@ namespace HallowOverlay
             if (cur != null && fps.Running && fps.Read(cur.Pids, out f, out low)) { x.Fps = f; x.FpsLow = low; }
             x.FrameMs = null; x.FrameCount = 0;
             if (cur != null && fps.Running && S.LookFor(game).FrameGraph) { x.FrameMs = frameBuf; x.FrameCount = fps.FrameTimes(cur.Pids, 5, frameBuf); }
-            x.ServerLabel = null; x.UpKbps = x.DownKbps = -1; x.ServerMs = x.ServerLoss = -1; x.Stalls = 0; string srvRegion = null, srvIp = null;
+            x.ServerLabel = null; x.UpKbps = x.DownKbps = -1; x.ServerMs = x.ServerLoss = -1; x.Stalls = 0; string srvRegion = null, srvIp = null, srvHost = null;
             if (cur != null && net.Running)
             {
                 var fd = net.Finder; fd.Tick(DateTime.UtcNow.ToFileTimeUtc());
@@ -486,7 +489,7 @@ namespace HallowOverlay
                 if (srv != null)
                 {
                     var info = ServerNames.Get(srv);
-                    x.ServerLabel = info.Code ?? (S.HideServerIp ? "Server" : srv.ToString()); srvRegion = info.Code; srvIp = srv.ToString();
+                    x.ServerLabel = info.Code ?? (S.HideServerIp ? "Server" : srv.ToString()); srvRegion = info.Code; srvIp = srv.ToString(); srvHost = info.Host;
                     x.ServerMs = serverPing.Ms; x.ServerApprox = serverPing.Approx; x.ServerLoss = serverPing.LossPct; x.Stalls = fd.Stalls;
                 }
                 if (fd.Changes != netChanges) { netChanges = fd.Changes; if (S.LookFor(game).Server && msg == null) { ShowMessage("Server changed", false); return; } }
@@ -526,10 +529,22 @@ namespace HallowOverlay
                 state.Foreground = exclusiveGame != null && exclusiveGame == game ? B("#F0BE5A") : (Brush)FindResource("Muted");
             }
             if (trayShow != null) trayShow.Checked = shown;
+            // live numbers for Hallow Remote: every 2 s while a game runs, once more when it ends (to clear them)
+            live = cur == null ? null : LiveStats.For(game, x, srvIp != null, srvRegion, srvHost, S.HideServerIp);
+            if (live != null && (DateTime.Now - liveWritten).TotalSeconds >= 1.9) { liveWritten = DateTime.Now; WriteStatus(true); }
+            else if (live == null && liveWas) WriteStatus(true);
+            liveWas = live != null;
             WriteStatus(false);
         }
 
         void Toggle() { shown = !shown; Refresh(); }
+        Dictionary<string, object> live; DateTime liveWritten; bool liveWas;
+        // developer test: HALLOW_OVERLAY_TESTGAME = "Name|folder" adds a made-up game (any process started from that folder counts)
+        void AddTestGame()
+        {
+            var e = Environment.GetEnvironmentVariable("HALLOW_OVERLAY_TESTGAME"); if (string.IsNullOrEmpty(e) || e.IndexOf('|') < 0) return;
+            var p = e.Split('|'); games.Add(new Game { Id = "test", Name = p[0], InstallDir = p[1], Source = "custom" });
+        }
         readonly double[] frameBuf = new double[4096];
         static double[] fakeFrames;
         // a made-up 144 fps game with a couple of hitches, for the preview and --snap

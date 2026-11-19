@@ -5,6 +5,9 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.10
+- Hallow Remote's Live stats tab shows your FPS, ping and the server's region while you play (never the server's IP).
+
 WHAT'S NEW IN 1.9
 - GPU clocks, power draw and VRAM (NVIDIA), and a frame-time graph with stutters in red.
 - The GPU reader always ends with Overlay now (it could keep running after an update).
@@ -36,6 +39,7 @@ WHAT'S NEW IN 1.2
 - FPS and 1% lows for the game you're playing (DirectX games), and a frame-time graph with stutters in red
 - GPU clocks, power draw and VRAM (NVIDIA cards)
 - The game's server: its region, ping, loss and stalls (and the game's up / down traffic if you like)
+- Your FPS, ping and the server's region on your phone in Hallow Remote's Live stats tab (never the server's IP)
 - Match history: a summary of every game session (FPS, ping, stalls, servers, temperatures), and a one-line summary on the panel when a game closes, from Windows' own frame events - no admin prompt.
 
 WHAT'S NEW IN 1.1
@@ -48,6 +52,7 @@ WHAT IT SHOWS
 - FPS and 1% lows for the game you're playing (DirectX games), and a frame-time graph with stutters in red
 - GPU clocks, power draw and VRAM (NVIDIA cards)
 - The game's server: its region, ping, loss and stalls (and the game's up / down traffic if you like)
+- Your FPS, ping and the server's region on your phone in Hallow Remote's Live stats tab (never the server's IP)
 - Match history: a summary of every game session (FPS, ping, stalls, servers, temperatures), and a one-line summary on the panel when a game closes
 - CPU, GPU load and temperature (NVIDIA cards), RAM, ping, session time, the clock
 - Only while a game is running (Steam, Battle.net, Epic, EA, Ubisoft, GOG, Riot, Xbox) - or always
