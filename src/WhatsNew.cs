@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.9", new[] { "GPU clocks, power draw (W and % of the limit) and VRAM, for NVIDIA cards (Show > GPU clocks / GPU power / VRAM)", "A frame-time graph of the last 5 seconds with stutters in red (Show > Frame-time graph; Small / Medium / Large)" }),
             Tuple.Create("1.8", new[] { "Uses the Hallow accent colour you pick in Hallow Toolkit (Settings > Use the Hallow accent)", "If Hallow Overlay ever crashes, a report is kept on this PC and you're told next time - nothing is sent anywhere" }),
             Tuple.Create("1.7", new[] { "Match summary: when a game closes, a one-line summary shows on the panel (FPS, ping, stalls)", "Match history (settings or the tray menu): every session with its details, and a Servers view of the regions you got" }),
             Tuple.Create("1.6", new[] { "One Hallow icon: with Hallow Hub running, Overlay's menu lives in Hub's tray icon and Overlay's own icon hides (Settings > Use the Hallow icon)" }),

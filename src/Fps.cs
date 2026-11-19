@@ -40,6 +40,25 @@ namespace HallowOverlay
             catch { }
         }
 
+        // The frame times (ms, oldest first) of the last `seconds` for the busiest of `pids`, into `buf` (reused: no allocations).
+        public int FrameTimes(ICollection<int> pids, double seconds, double[] buf)
+        {
+            lock (gate)
+            {
+                Queue<long> best = null;
+                foreach (var kv in frames) if (pids.Contains(kv.Key) && (best == null || kv.Value.Count > best.Count)) best = kv.Value;
+                if (best == null || best.Count < 2) return 0;
+                long last = 0; foreach (var t in best) last = t;
+                long from = last - (long)(seconds * 10000000), prev = -1; int n = 0;
+                foreach (var t in best)
+                {
+                    if (t >= from && prev >= 0 && n < buf.Length) buf[n++] = (t - prev) / 10000.0;
+                    prev = t;
+                }
+                return n;
+            }
+        }
+
         // FPS over the last 2 s and the 1% low over the last 10 s, for whichever of `pids` presents the most frames.
         public bool Read(ICollection<int> pids, out double fps, out double low)
         {

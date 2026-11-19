@@ -35,6 +35,8 @@ namespace HallowOverlay
         [DataMember] public int Stalls;
         [DataMember] public List<ServerUse> Servers = new List<ServerUse>();
         [DataMember] public double GpuTempAvg = -1, GpuTempMax = -1, CpuAvg = -1, GpuAvg = -1, RamPeakGB = -1;
+        [DataMember] public double PowerAvgW = -1, VramPeakGB = -1;
+        [OnDeserializing] void D(StreamingContext c) { PowerAvgW = VramPeakGB = -1; }   // matches saved by 1.7 / 1.8
 
         public static string Length(double minutes) { return minutes >= 60 ? ((int)(minutes / 60)) + "h " + ((int)minutes % 60).ToString("00") + "m" : ((int)Math.Round(minutes)) + "m"; }
         // "Deadlock 42m - 141 fps avg, 23 ms, 0 stalls"
@@ -58,7 +60,7 @@ namespace HallowOverlay
     {
         public const double MinMinutes = 2;
         string game; DateTime start, last; bool on;
-        double fpsSum, lowSum, pingSum, lossSum, tempSum, cpuSum, gpuSum; int fpsN, lowN, pingN, lossN, tempN, cpuN, gpuN;
+        double fpsSum, lowSum, pingSum, lossSum, tempSum, cpuSum, gpuSum, powSum, vramPeak; int fpsN, lowN, pingN, lossN, tempN, cpuN, gpuN, powN;
         double pingWorst, tempMax, ramPeak; int stalls, lastTotal = -1;
         List<ServerUse> servers;
         public bool Recording { get { return on; } }
@@ -67,7 +69,7 @@ namespace HallowOverlay
         public void Begin(string gameName, DateTime since)
         {
             game = gameName; start = since; last = since; on = true;
-            fpsSum = lowSum = pingSum = lossSum = tempSum = cpuSum = gpuSum = 0; fpsN = lowN = pingN = lossN = tempN = cpuN = gpuN = 0;
+            fpsSum = lowSum = pingSum = lossSum = tempSum = cpuSum = gpuSum = powSum = 0; fpsN = lowN = pingN = lossN = tempN = cpuN = gpuN = powN = 0; vramPeak = -1;
             pingWorst = tempMax = ramPeak = -1; stalls = 0; lastTotal = -1; servers = new List<ServerUse>();
         }
 
@@ -86,6 +88,8 @@ namespace HallowOverlay
             if (x.Cpu >= 0) { cpuSum += x.Cpu; cpuN++; }
             if (x.Gpu >= 0) { gpuSum += x.Gpu; gpuN++; }
             if (x.RamUsedGB >= 0) ramPeak = Math.Max(ramPeak, x.RamUsedGB);
+            if (x.PowerW >= 0) { powSum += x.PowerW; powN++; }
+            if (x.VramUsedMB >= 0) vramPeak = Math.Max(vramPeak, x.VramUsedMB / 1024);
             int add = lastTotal >= 0 && totalStalls >= lastTotal ? totalStalls - lastTotal : 0;
             if (totalStalls >= 0) lastTotal = totalStalls;
             stalls += add;
@@ -109,7 +113,7 @@ namespace HallowOverlay
             return new GameMatch { Game = game, Start = start, End = last, Minutes = mins, FpsAvg = avg(fpsSum, fpsN), FpsLow = avg(lowSum, lowN),
                 PingAvg = avg(pingSum, pingN), PingWorst = pingWorst, LossPct = avg(lossSum, lossN), Stalls = stalls,
                 Servers = servers.OrderByDescending(s => s.Seconds).ToList(), GpuTempAvg = avg(tempSum, tempN), GpuTempMax = tempMax,
-                CpuAvg = avg(cpuSum, cpuN), GpuAvg = avg(gpuSum, gpuN), RamPeakGB = ramPeak };
+                CpuAvg = avg(cpuSum, cpuN), GpuAvg = avg(gpuSum, gpuN), RamPeakGB = ramPeak, PowerAvgW = avg(powSum, powN), VramPeakGB = vramPeak };
         }
     }
 
@@ -230,6 +234,8 @@ namespace HallowOverlay
             row("GPU temperature", m.GpuTempAvg >= 0 ? m.GpuTempAvg.ToString("0") + "°C average,  max " + m.GpuTempMax.ToString("0") + "°C" : null);
             row("CPU", n(m.CpuAvg, "% average")); row("GPU load", n(m.GpuAvg, "% average"));
             row("RAM", m.RamPeakGB >= 0 ? m.RamPeakGB.ToString("0.0") + " GB at most" : null);
+            row("GPU power", n(m.PowerAvgW, " W average"));
+            row("VRAM", m.VramPeakGB >= 0 ? m.VramPeakGB.ToString("0.0") + " GB at most" : null);
             if (m.Servers.Count > 0)
             {
                 sp.Children.Add(new TextBlock { Text = "Servers", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 10, 0, 6) });

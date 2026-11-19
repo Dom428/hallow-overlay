@@ -5,6 +5,10 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.9
+- GPU clocks, power draw and VRAM (NVIDIA), and a frame-time graph with stutters in red.
+- The GPU reader always ends with Overlay now (it could keep running after an update).
+
 WHAT'S NEW IN 1.8
 - Uses the Hallow accent colour you pick in Hallow Toolkit (Settings > Use the Hallow accent).
 - If it ever crashes, a report is kept on this PC and you're told next time - nothing is sent anywhere.
@@ -29,7 +33,8 @@ WHAT'S NEW IN 1.3
 - Packet loss and jitter next to ping.
 
 WHAT'S NEW IN 1.2
-- FPS and 1% lows for the game you're playing (DirectX games)
+- FPS and 1% lows for the game you're playing (DirectX games), and a frame-time graph with stutters in red
+- GPU clocks, power draw and VRAM (NVIDIA cards)
 - The game's server: its region, ping, loss and stalls (and the game's up / down traffic if you like)
 - Match history: a summary of every game session (FPS, ping, stalls, servers, temperatures), and a one-line summary on the panel when a game closes, from Windows' own frame events - no admin prompt.
 
@@ -40,7 +45,8 @@ WHAT'S NEW IN 1.1
 WHAT IT SHOWS
 - A big red MIC MUTED warning when your mic is muted in Hallow Mixer, and the song or video that's playing
 - "Clip saved" from Hallow Clips and Hallow Hub's break reminder / daily limit, right on the panel
-- FPS and 1% lows for the game you're playing (DirectX games)
+- FPS and 1% lows for the game you're playing (DirectX games), and a frame-time graph with stutters in red
+- GPU clocks, power draw and VRAM (NVIDIA cards)
 - The game's server: its region, ping, loss and stalls (and the game's up / down traffic if you like)
 - Match history: a summary of every game session (FPS, ping, stalls, servers, temperatures), and a one-line summary on the panel when a game closes
 - CPU, GPU load and temperature (NVIDIA cards), RAM, ping, session time, the clock

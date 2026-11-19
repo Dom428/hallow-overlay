@@ -3,6 +3,7 @@
 A see-through stats panel over your games - part of the Hallow family with [Hallow Hub](https://github.com/Dom428/hallow-hub), [Hallow Vault](https://github.com/Dom428/hallow-vault), [Hallow Mixer](https://github.com/Dom428/hallow-mixer) and [Hallow Toolkit](https://github.com/Dom428/hallow-toolkit).
 
 - **MIC MUTED** warning and now playing from Hallow Mixer (instant with Mixer 3.14+), FPS and 1% lows, CPU, GPU load and temperature, RAM, ping, session time, clock
+- GPU core / memory clocks, power draw (W and % of the limit) and VRAM (NVIDIA), and a frame-time graph of the last 5 seconds with stutters in red
 - FPS comes from Windows' own frame events (ETW, the same ones PresentMon reads) - no admin prompt; Windows only allows it for admins and the Performance Log Users group, otherwise FPS stays hidden
 - Shows only while a game runs (or always); any corner, one line or a column, three sizes; Ctrl+Shift+O to hide
 - **Game server**: which server the game is talking to (from Windows' own Winsock events for the game's processes - same rules as FPS), its region from the host name (no online lookup), ping (or the nearest hop that answers, shown with ~), loss, "stalls" and the game's up / down traffic; the IP stays hidden by default

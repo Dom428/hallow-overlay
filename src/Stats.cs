@@ -32,6 +32,8 @@ namespace HallowOverlay
         [DataMember] public bool OnlyBad = false;        // only show a stat when it's in trouble
         [DataMember] public bool LossJitter = true;      // packet loss and jitter next to ping
         [DataMember] public bool NowPlaying = true;      // the song / video playing (from Hallow Mixer)
+        [DataMember] public bool GpuClocks = false, GpuPower = false, Vram = false;   // NVIDIA: core / memory clocks, power draw, VRAM
+        [DataMember] public bool FrameGraph = false; [DataMember] public string GraphSize = "m";   // frame-time graph: s, m, l
         [DataMember] public bool Server = true, Traffic = false;   // the game's server (region, ping, loss, stalls); the game's up / down traffic
         [DataMember] public bool UseHallowAccent = true; // the accent colour picked in Hallow Toolkit
         [DataMember] public string LastCrashShown = ""; // the crash report the notice was shown for
@@ -44,7 +46,7 @@ namespace HallowOverlay
         {
             Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; TrayOnClose = true;
             OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
-            OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; LastCrashShown = ""; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
+            GpuClocks = GpuPower = Vram = FrameGraph = false; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; LastCrashShown = ""; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
         }
         [OnDeserialized] void Fix(StreamingContext c) { if (OffGames == null) OffGames = new List<string>(); }
 
@@ -82,6 +84,8 @@ namespace HallowOverlay
     {
         public double Cpu = -1, RamUsedGB = -1, RamTotalGB = -1, Gpu = -1, GpuTemp = -1, PingMs = -1, Fps = -1, FpsLow = -1, LossPct = -1, JitterMs = -1;
         public bool MicMuted, MixerOn;
+        public double GpuClock = -1, MemClock = -1, PowerW = -1, PowerLimitW = -1, VramUsedMB = -1, VramTotalMB = -1;   // NVIDIA
+        public double[] FrameMs; public int FrameCount;   // the last few seconds of frame times (for the graph), oldest first
         public string ServerLabel; public double ServerMs = -1, ServerLoss = -1, UpKbps = -1, DownKbps = -1; public bool ServerApprox; public int Stalls;   // the game's server (from NetMonitor)
         public string NowPlaying;   // "Artist - Title" while something plays (Hallow Mixer), else null
         public Sample Copy() { return (Sample)MemberwiseClone(); }
@@ -97,14 +101,54 @@ namespace HallowOverlay
         readonly object gate = new object(); Sample last = new Sample();
         public Sample Latest { get { lock (gate) return last; } }
         public string PingHost = "1.1.1.1";
-        double gpu = -1, gpuTemp = -1; Process smi; volatile bool stop;
+        double gpu = -1, gpuTemp = -1, gpuClock = -1, memClock = -1, power = -1, powerLimit = -1, vramUsed = -1, vramTotal = -1; Process smi; volatile bool stop;
 
         public void Start()
         {
-            StartSmi();
+            EndOrphans(); StartSmi();
             new Thread(Loop) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "overlay stats" }.Start();
         }
         public void Stop() { stop = true; try { if (smi != null && !smi.HasExited) smi.Kill(); } catch { } }
+
+        // nvidia-smi goes into a job that Windows closes when Overlay ends - even when it's killed - so it never keeps running alone.
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateJobObject(IntPtr attrs, string name);
+        [DllImport("kernel32.dll")] static extern bool SetInformationJobObject(IntPtr job, int cls, IntPtr info, uint len);
+        [DllImport("kernel32.dll")] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+        static IntPtr job;
+        static void KillWithUs(Process p)
+        {
+            try
+            {
+                if (job == IntPtr.Zero)
+                {
+                    job = CreateJobObject(IntPtr.Zero, null); if (job == IntPtr.Zero) return;
+                    // JOBOBJECT_EXTENDED_LIMIT_INFORMATION (x64: 144 bytes), LimitFlags at 16 = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                    int size = IntPtr.Size == 8 ? 144 : 112; var info = Marshal.AllocHGlobal(size);
+                    try { for (int i = 0; i < size; i++) Marshal.WriteByte(info, i, 0); Marshal.WriteInt32(info, 16, 0x2000); SetInformationJobObject(job, 9, info, (uint)size); }
+                    finally { Marshal.FreeHGlobal(info); }
+                }
+                AssignProcessToJobObject(job, p.Handle);
+            }
+            catch { }
+        }
+        // Older versions could leave their nvidia-smi running when Overlay was killed: end those (ours only - same query, owner gone).
+        public static void EndOrphans()
+        {
+            try
+            {
+                using (var q = new System.Management.ManagementObjectSearcher("SELECT ProcessId, ParentProcessId, CommandLine FROM Win32_Process WHERE Name = 'nvidia-smi.exe'"))
+                    foreach (System.Management.ManagementObject o in q.Get())
+                    {
+                        var cmd = o["CommandLine"] as string ?? "";
+                        if (!cmd.Contains("--query-gpu=utilization.gpu,temperature.gpu") || !cmd.Contains("--format=csv,noheader,nounits -lms 1000")) continue;
+                        int parent = Convert.ToInt32(o["ParentProcessId"]); bool alive;
+                        try { using (var pp = Process.GetProcessById(parent)) alive = !pp.HasExited && pp.ProcessName.StartsWith("Hallow", StringComparison.OrdinalIgnoreCase); } catch { alive = false; }
+                        if (alive) continue;
+                        try { using (var dead = Process.GetProcessById(Convert.ToInt32(o["ProcessId"]))) dead.Kill(); } catch { }
+                    }
+            }
+            catch { }
+        }
 
         // nvidia-smi keeps running and prints one line a second (-lms), so nothing is started over and over
         void StartSmi()
@@ -112,13 +156,16 @@ namespace HallowOverlay
             var exe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "nvidia-smi.exe"); if (!File.Exists(exe)) return;
             try
             {
-                smi = new Process { StartInfo = new ProcessStartInfo(exe, "--query-gpu=utilization.gpu,temperature.gpu --format=csv,noheader,nounits -lms 1000") { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true } };
+                smi = new Process { StartInfo = new ProcessStartInfo(exe, "--query-gpu=utilization.gpu,temperature.gpu,clocks.gr,clocks.mem,power.draw,enforced.power.limit,memory.used,memory.total --format=csv,noheader,nounits -lms 1000") { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true } };
                 smi.OutputDataReceived += (s, e) =>
                 {
                     if (e.Data == null) return; var p = e.Data.Split(','); double u, t;
                     if (p.Length >= 2 && double.TryParse(p[0].Trim(), out u) && double.TryParse(p[1].Trim(), out t)) { gpu = u; gpuTemp = t; }
+                    // the rest may be "[N/A]" on some cards: each one on its own
+                    Func<int, double> f = i => { double v; return p.Length > i && double.TryParse(p[i].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v) ? v : -1; };
+                    gpuClock = f(2); memClock = f(3); power = f(4); powerLimit = f(5); vramUsed = f(6); vramTotal = f(7);
                 };
-                smi.Start(); smi.BeginOutputReadLine();
+                smi.Start(); KillWithUs(smi); smi.BeginOutputReadLine();
             }
             catch { smi = null; }
         }
@@ -135,7 +182,7 @@ namespace HallowOverlay
                 var s = new Sample();
                 try { if (cpu != null) s.Cpu = Math.Min(100, cpu.NextValue()); } catch { }
                 try { var m = new MEMORYSTATUSEX(); if (GlobalMemoryStatusEx(m)) { s.RamTotalGB = m.ullTotalPhys / 1073741824.0; s.RamUsedGB = (m.ullTotalPhys - m.ullAvailPhys) / 1073741824.0; } } catch { }
-                s.Gpu = gpu; s.GpuTemp = gpuTemp;
+                s.Gpu = gpu; s.GpuTemp = gpuTemp; s.GpuClock = gpuClock; s.MemClock = memClock; s.PowerW = power; s.PowerLimitW = powerLimit; s.VramUsedMB = vramUsed; s.VramTotalMB = vramTotal;
                 lock (gate) { s.PingMs = pingMs; s.LossPct = lossPct; s.JitterMs = jitterMs; s.MicMuted = muted; s.MixerOn = mixerOn; s.NowPlaying = nowPlaying; last = s; }
                 if (smi != null && smi.HasExited && tick % 30 == 0) StartSmi();
             }

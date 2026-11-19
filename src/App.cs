@@ -21,14 +21,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.8.0.0")]
-[assembly: AssemblyFileVersion("1.8.0.0")]
+[assembly: AssemblyVersion("1.9.0.0")]
+[assembly: AssemblyFileVersion("1.9.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.8";
+        public const string Version = "1.9";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -78,6 +78,38 @@ namespace HallowOverlay
     {
         static SolidColorBrush B(string hex) { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
         public static FrameworkElement Build(OverlaySettings s, Sample x, string game, TimeSpan? session) { return Build(s, x, game, session, null, false, false); }
+
+        // The frame-time graph: one frozen geometry per panel refresh (once a second), never per frame. Each pixel column shows the
+        // slowest frame in it, so one long frame always shows; spikes (over twice the typical frame time) are red. Buffers are reused.
+        static readonly double[] cols = new double[400], sorted = new double[4096];
+        public static FrameworkElement Graph(double[] ms, int n, string size, double k, out int spikes)
+        {
+            double w = (size == "s" ? 110 : size == "l" ? 260 : 170) * k, h = (size == "s" ? 22 : size == "l" ? 48 : 32) * k;
+            int c = Math.Min(cols.Length, Math.Max(10, (int)w));
+            int m = Math.Min(n, sorted.Length); Array.Copy(ms, sorted, m); Array.Sort(sorted, 0, m);
+            double med = sorted[m / 2], top = Math.Max(med * 3, 20), spike = Math.Max(med * 2, med + 4);
+            for (int i = 0; i < c; i++) cols[i] = 0;
+            for (int i = 0; i < n; i++) { int ci = (int)((long)i * c / n); if (ms[i] > cols[ci]) cols[ci] = ms[i]; }
+            var line = new StreamGeometry(); var red = new StreamGeometry(); spikes = 0;
+            using (var lc = line.Open()) using (var rc = red.Open())
+            {
+                for (int i = 0; i < c; i++)
+                {
+                    double px = i * w / (c - 1), py = h - Math.Min(cols[i], top) / top * h;
+                    if (i == 0) lc.BeginFigure(new Point(px, py), false, false); else lc.LineTo(new Point(px, py), true, false);
+                    if (cols[i] >= spike) { spikes++; rc.BeginFigure(new Point(px, h), false, false); rc.LineTo(new Point(px, py), true, false); }
+                }
+            }
+            line.Freeze(); red.Freeze();
+            var grid = new Grid { Width = w, Height = h, VerticalAlignment = VerticalAlignment.Center, ClipToBounds = true };
+            var mid = h - med / top * h;
+            grid.Children.Add(new System.Windows.Shapes.Line { X1 = 0, X2 = w, Y1 = mid, Y2 = mid, Stroke = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)), StrokeThickness = 1 });
+            grid.Children.Add(new System.Windows.Shapes.Path { Data = line, Stroke = B("#A98BE0"), StrokeThickness = Math.Max(1, 1.3 * k), StrokeLineJoin = PenLineJoin.Round });
+            grid.Children.Add(new System.Windows.Shapes.Path { Data = red, Stroke = B("#FF6B6B"), StrokeThickness = Math.Max(1.5, 2 * k) });
+            var label = new TextBlock { Text = med.ToString("0.0") + " ms", FontSize = 10 * k, Foreground = B("#8F88A0"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6 * k, 0, 0, 0) };
+            var sp = new StackPanel { Orientation = Orientation.Horizontal }; sp.Children.Add(grid); sp.Children.Add(label);
+            return sp;
+        }
         // msg: a short message from another Hallow app (flash, or a stronger remind); msgOnly: show just the message
         public static FrameworkElement Build(OverlaySettings s, Sample x, string game, TimeSpan? session, string msg, bool strong, bool msgOnly)
         {
@@ -97,9 +129,22 @@ namespace HallowOverlay
             if (s.Game && game != null && !bad) item("gamepad", game, 0);
             if (s.Session && session != null && !bad) item("stopwatch", session.Value.TotalHours >= 1 ? ((int)session.Value.TotalHours + ":" + session.Value.Minutes.ToString("00")) : session.Value.Minutes + " min", 0);
             if (s.Fps && x.Fps >= 0) item("gauge-high", x.Fps.ToString("0") + " FPS" + (x.FpsLow >= 0 ? "  1% " + x.FpsLow.ToString("0") : ""), x.Fps < 30 ? 2 : x.Fps < 50 ? 1 : 0);
+            if (s.FrameGraph && x.FrameMs != null && x.FrameCount >= 10)
+            {
+                int spikes; var g = Graph(x.FrameMs, x.FrameCount, s.GraphSize, k, out spikes);
+                if (!bad || spikes > 0) { g.Margin = s.Row ? new Thickness(0, 0, 14 * k, 0) : new Thickness(0, 3, 0, 3); items.Add(g); }
+            }
             if (s.Cpu && x.Cpu >= 0) item("microchip", "CPU " + x.Cpu.ToString("0") + "%", x.Cpu >= 90 ? 1 : 0);
             if (s.Gpu && x.Gpu >= 0) item("display", "GPU " + x.Gpu.ToString("0") + "%", 0);
             if (s.GpuTemp && x.GpuTemp >= 0) item("temperature-half", x.GpuTemp.ToString("0") + "°C", x.GpuTemp >= s.HotGpu + 7 ? 2 : x.GpuTemp >= s.HotGpu ? 1 : 0);
+            if (s.GpuClocks && x.GpuClock >= 0) item("wave-square", x.GpuClock.ToString("0") + (x.MemClock >= 0 ? " / " + x.MemClock.ToString("0") : "") + " MHz", 0);
+            if (s.GpuPower && x.PowerW >= 0)
+            {
+                var pp = x.PowerLimitW > 0 ? x.PowerW / x.PowerLimitW * 100 : -1;
+                item("bolt", x.PowerW.ToString("0") + " W" + (pp >= 0 ? "  " + pp.ToString("0") + "%" : ""), pp >= 98 ? 1 : 0);   // at the limit: the card is power-limited
+            }
+            if (s.Vram && x.VramUsedMB >= 0 && x.VramTotalMB > 0)
+                item("layer-group", "VRAM " + (x.VramUsedMB / 1024).ToString("0.0") + " / " + (x.VramTotalMB / 1024).ToString("0") + " GB", x.VramUsedMB / x.VramTotalMB >= 0.95 ? 1 : 0);
             if (s.Ram && x.RamUsedGB >= 0)
             {
                 var pct = x.RamUsedGB / x.RamTotalGB * 100;
@@ -408,7 +453,7 @@ namespace HallowOverlay
         }
         void RunFps()
         {
-            bool want = S.Fps && Current != null;
+            var cl = CurrentLook; bool want = (cl.Fps || cl.FrameGraph) && Current != null;
             if (want && !fps.Running && !fps.Denied && DateTime.Now >= fpsRetry) { if (!fps.Start()) fpsRetry = DateTime.Now.AddMinutes(1); }
             else if (!want && fps.Running) fps.Stop();
         }
@@ -430,6 +475,8 @@ namespace HallowOverlay
             TimeSpan? session = cur == null ? (TimeSpan?)null : DateTime.Now - cur.Since;
             double f, low; x.Fps = x.FpsLow = -1;
             if (cur != null && fps.Running && fps.Read(cur.Pids, out f, out low)) { x.Fps = f; x.FpsLow = low; }
+            x.FrameMs = null; x.FrameCount = 0;
+            if (cur != null && fps.Running && S.LookFor(game).FrameGraph) { x.FrameMs = frameBuf; x.FrameCount = fps.FrameTimes(cur.Pids, 5, frameBuf); }
             x.ServerLabel = null; x.UpKbps = x.DownKbps = -1; x.ServerMs = x.ServerLoss = -1; x.Stalls = 0; string srvRegion = null, srvIp = null;
             if (cur != null && net.Running)
             {
@@ -466,7 +513,7 @@ namespace HallowOverlay
             else if (ov.IsVisible) ov.Hide();
             if (IsVisible)
             {
-                var px = x; if (px.Fps < 0 && !fps.Denied) { px = x.Copy(); px.Fps = 144; px.FpsLow = 97; }   // what it looks like in a game
+                var px = x; if (px.Fps < 0 && !fps.Denied) { px = x.Copy(); px.Fps = 144; px.FpsLow = 97; px.FrameMs = FakeFrames(); px.FrameCount = px.FrameMs.Length; }   // what it looks like in a game
                 var pl = editGame != null ? S.LookFor(editGame) : look;
                 preview.HorizontalAlignment = pl.Corner.EndsWith("r") ? HorizontalAlignment.Right : HorizontalAlignment.Left;
                 preview.VerticalAlignment = pl.Corner.StartsWith("b") ? VerticalAlignment.Bottom : VerticalAlignment.Top;
@@ -483,6 +530,16 @@ namespace HallowOverlay
         }
 
         void Toggle() { shown = !shown; Refresh(); }
+        readonly double[] frameBuf = new double[4096];
+        static double[] fakeFrames;
+        // a made-up 144 fps game with a couple of hitches, for the preview and --snap
+        public static double[] FakeFrames()
+        {
+            if (fakeFrames != null) return fakeFrames;
+            var r = new Random(7); var l = new List<double>();
+            for (int i = 0; i < 720; i++) l.Add(i == 260 ? 31 : i == 540 ? 22 : i % 97 == 0 ? 11 : 6.9 + r.NextDouble() * 0.9);
+            return fakeFrames = l.ToArray();
+        }
         static UIElement Fit(FrameworkElement el) { return new Viewbox { Child = el, StretchDirection = StretchDirection.DownOnly, Stretch = Stretch.Uniform }; }   // the preview shrinks a wide panel to fit
 
         // ================================================================ settings window
@@ -625,7 +682,11 @@ namespace HallowOverlay
             sw("GPU temperature", T.GpuTemp, v => T.GpuTemp = v); sw("RAM", T.Ram, v => T.Ram = v); sw("Ping", T.Ping, v => T.Ping = v);
             sw("Session time", T.Session, v => T.Session = v); sw("Clock", T.Clock, v => T.Clock = v); sw("Game name", T.Game, v => T.Game = v);
             sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v); sw("Now playing (Mixer)", T.NowPlaying, v => T.NowPlaying = v); sw("Game server", T.Server, v => T.Server = v); sw("Game traffic (up / down)", T.Traffic, v => T.Traffic = v);
+            sw("GPU clocks", T.GpuClocks, v => T.GpuClocks = v); sw("GPU power", T.GpuPower, v => T.GpuPower = v); sw("VRAM", T.Vram, v => T.Vram = v);
+            sw("Frame-time graph", T.FrameGraph, v => T.FrameGraph = v);
             lookHost.Children.Add(grid);
+            var gs = chips("Graph size", new[] { Tuple.Create("s", "Small"), Tuple.Create("m", "Medium"), Tuple.Create("l", "Large") }, () => T.GraphSize ?? "m", v => T.GraphSize = v);
+            gs.Margin = new Thickness(0, 8, 0, 0); lookHost.Children.Add(gs);
             var bad = new CheckBox { Content = new TextBlock { Text = "Only when something's wrong: a stat shows up only while it's in trouble (hot GPU, high ping or packet loss, RAM almost full, low FPS, busy CPU)", TextWrapping = TextWrapping.Wrap },
                 IsChecked = T.OnlyBad, Style = (Style)FindResource("Switch"), Margin = new Thickness(0, 8, 0, 0) };
             bad.Click += (s, e) => { T.OnlyBad = bad.IsChecked == true; S.Save(); Refresh(); };
@@ -690,7 +751,7 @@ namespace HallowOverlay
 
         public void SnapAll(string dir)
         {
-            var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97, NowPlaying = "Lo-fi Beats - Rainy Night", ServerLabel = "FRA", ServerMs = 23, ServerApprox = true, ServerLoss = 0, UpKbps = 96, DownKbps = 410 };
+            var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97, NowPlaying = "Lo-fi Beats - Rainy Night", ServerLabel = "FRA", ServerMs = 23, ServerApprox = true, ServerLoss = 0, UpKbps = 96, DownKbps = 410, GpuClock = 2610, MemClock = 10501, PowerW = 241, PowerLimitW = 285, VramUsedMB = 9420, VramTotalMB = 16376, FrameMs = FakeFrames(), FrameCount = 720 };
             preview.Child = Fit(Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)));
             state.Text = "Waiting for a game - it appears by itself when one starts.";
             Snap.Save(this, System.IO.Path.Combine(dir, "settings.png"), 760, 0);
@@ -706,6 +767,12 @@ namespace HallowOverlay
             // 1.3: loss and jitter, only-when-wrong, a game's own look in the settings
             var y = x.Copy(); y.LossPct = 3.3; y.JitterMs = 12; y.PingMs = 96; y.GpuTemp = 84; y.MicMuted = false;
             one("loss-jitter.png", Panel.Build(S, y, "Delta Force", TimeSpan.FromMinutes(42)), 900);
+            // 1.9: GPU details and the frame-time graph
+            var gl = S.LookCopy(); gl.GpuClocks = gl.GpuPower = gl.Vram = gl.FrameGraph = true; gl.MicWarn = false; gl.Ram = gl.Ping = gl.Clock = gl.Session = gl.Server = gl.NowPlaying = false;
+            var gx = x.Copy(); gx.MicMuted = false; gx.PowerW = 283;
+            foreach (var sz in new[] { "s", "m", "l" }) { gl.GraphSize = sz; one("gpu-graph-" + sz + ".png", Panel.Build(gl, gx, "Delta Force", null), 1000); }
+            gl.Row = false; gl.GraphSize = "m"; one("gpu-graph-column.png", Panel.Build(gl, gx, "Delta Force", null), 260);
+            gl.Row = true; gl.OnlyBad = true; one("gpu-graph-onlybad.png", Panel.Build(gl, gx, "Delta Force", null), 1000);
             var b = S.LookCopy(); b.OnlyBad = true;
             var tl = S.LookCopy(); tl.Traffic = true; var ty = y.Copy(); ty.Stalls = 2; one("traffic.png", Panel.Build(tl, ty, "Delta Force", null), 1100);
             one("only-bad.png", Panel.Build(b, y, "Delta Force", TimeSpan.FromMinutes(42)), 900);
