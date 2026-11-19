@@ -22,6 +22,7 @@ namespace HallowOverlay
         [DataMember] public bool Row = true;             // one line (true) or a column
         [DataMember] public bool OnlyInGame = true;      // show only while a game is running
         [DataMember] public bool Cpu = true, Gpu = true, GpuTemp = true, Ram = true, Ping = true, Clock = true, Session = true, MicWarn = true, Game = false;
+        [DataMember] public bool Fps = true;             // frames per second and 1% low (when Windows allows reading them)
         [DataMember] public string PingHost = "1.1.1.1";
         [DataMember] public bool Hotkey = true;          // Ctrl+Shift+O shows / hides it
         [DataMember] public bool TrayOnClose = true;
@@ -29,7 +30,7 @@ namespace HallowOverlay
         [DataMember] public string LastSeenVersion = "";
         [OnDeserializing] void D(StreamingContext c)
         {
-            Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; PingHost = "1.1.1.1"; Hotkey = true; TrayOnClose = true;
+            Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; TrayOnClose = true;
             OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
         }
         [OnDeserialized] void Fix(StreamingContext c) { if (OffGames == null) OffGames = new List<string>(); }
@@ -50,8 +51,9 @@ namespace HallowOverlay
 
     public class Sample
     {
-        public double Cpu = -1, RamUsedGB = -1, RamTotalGB = -1, Gpu = -1, GpuTemp = -1, PingMs = -1;
+        public double Cpu = -1, RamUsedGB = -1, RamTotalGB = -1, Gpu = -1, GpuTemp = -1, PingMs = -1, Fps = -1, FpsLow = -1;
         public bool MicMuted, MixerOn;
+        public Sample Copy() { return (Sample)MemberwiseClone(); }
     }
 
     // Everything is read off the game's thread and off the overlay's thread; the overlay just shows the latest Sample.

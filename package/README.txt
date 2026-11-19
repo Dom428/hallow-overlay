@@ -5,12 +5,16 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.2
+- FPS and 1% lows for the game you're playing (DirectX games), from Windows' own frame events - no admin prompt.
+
 WHAT'S NEW IN 1.1
 - Tells you when a game is in exclusive fullscreen (Windows can't draw over that - switch the game to borderless).
 - Other Hallow apps can show / hide the overlay and put short messages on it ("Clip saved", break reminders).
 
 WHAT IT SHOWS
 - A big red MIC MUTED warning when your mic is muted in Hallow Mixer
+- FPS and 1% lows for the game you're playing (DirectX games)
 - CPU, GPU load and temperature (NVIDIA cards), RAM, ping, session time, the clock
 - Only while a game is running (Steam, Battle.net, Epic, EA, Ubisoft, GOG, Riot, Xbox) - or always
 - Any corner, one line or a column, three sizes, see-through background

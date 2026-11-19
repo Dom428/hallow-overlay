@@ -20,14 +20,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.1";
+        public const string Version = "1.2";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -76,7 +76,7 @@ namespace HallowOverlay
         public static FrameworkElement Build(OverlaySettings s, Sample x, string game, TimeSpan? session, string msg, bool strong, bool msgOnly)
         {
             var k = s.Scale; var items = new List<FrameworkElement>();
-            if (msgOnly) { s = new OverlaySettings { Scale = s.Scale, Row = s.Row, Opacity = s.Opacity, MicWarn = false, Cpu = false, Gpu = false, GpuTemp = false, Ram = false, Ping = false, Clock = false, Session = false, Game = false }; }
+            if (msgOnly) { s = new OverlaySettings { Scale = s.Scale, Row = s.Row, Opacity = s.Opacity, MicWarn = false, Cpu = false, Gpu = false, GpuTemp = false, Ram = false, Ping = false, Clock = false, Session = false, Game = false, Fps = false }; }
             Action<string, string, int> item = (icon, text, level) =>
             {
                 var col = level == 2 ? "#FF6B6B" : level == 1 ? "#F0BE5A" : "#ECE8F4";
@@ -88,6 +88,7 @@ namespace HallowOverlay
             };
             if (s.Game && game != null) item("gamepad", game, 0);
             if (s.Session && session != null) item("stopwatch", session.Value.TotalHours >= 1 ? ((int)session.Value.TotalHours + ":" + session.Value.Minutes.ToString("00")) : session.Value.Minutes + " min", 0);
+            if (s.Fps && x.Fps >= 0) item("gauge-high", x.Fps.ToString("0") + " FPS" + (x.FpsLow >= 0 ? "  1% " + x.FpsLow.ToString("0") : ""), x.Fps < 30 ? 2 : x.Fps < 50 ? 1 : 0);
             if (s.Cpu && x.Cpu >= 0) item("microchip", "CPU " + x.Cpu.ToString("0") + "%", x.Cpu >= 90 ? 1 : 0);
             if (s.Gpu && x.Gpu >= 0) item("display", "GPU " + x.Gpu.ToString("0") + "%", 0);
             if (s.GpuTemp && x.GpuTemp >= 0) item("temperature-half", x.GpuTemp.ToString("0") + "°C", x.GpuTemp >= 85 ? 2 : x.GpuTemp >= 78 ? 1 : 0);
@@ -150,6 +151,7 @@ namespace HallowOverlay
         readonly OverlaySettings S = OverlaySettings.Load();
         readonly Sampler sampler = new Sampler();
         readonly Tracker tracker = new Tracker();
+        readonly FpsMeter fps = new FpsMeter(); DateTime fpsRetry; TextBlock foot;
         List<Game> games = new List<Game>();
         readonly OverlayWindow ov = new OverlayWindow();
         bool shown = true, exiting, toldTray; readonly bool startHidden;
@@ -187,7 +189,7 @@ namespace HallowOverlay
             if (S.Hotkey) RegisterHotKey(hwnd, 1, 0x4006, 0x4F);   // MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'O'
             HwndSource.FromHwnd(hwnd).AddHook((IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) => { if (msg == 0x0312 && wp.ToInt32() == 1) { Toggle(); handled = true; } return IntPtr.Zero; });
             tick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) }; tick.Tick += (s, e) => Refresh(); tick.Start();
-            poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) }; poll.Tick += (s, e) => { try { tracker.Poll(games.Concat(games.SelectMany(g => g.Alts)).ToList()); } catch { } CheckExclusive(); }; poll.Start();
+            poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) }; poll.Tick += (s, e) => { try { tracker.Poll(games.Concat(games.SelectMany(g => g.Alts)).ToList()); } catch { } CheckExclusive(); RunFps(); }; poll.Start();
             var rescan = new DispatcherTimer { Interval = TimeSpan.FromMinutes(10) }; rescan.Tick += (s, e) => { try { games = Library.Scan(new List<Game>()); } catch { } }; rescan.Start();
             msgTimer = new DispatcherTimer(); msgTimer.Tick += (s, e) => { msgTimer.Stop(); Refresh(); };
             Link.Serve(Dispatcher, OnCommand);
@@ -257,6 +259,13 @@ namespace HallowOverlay
             if (exclusiveGame != null && toldExclusive.Add(exclusiveGame) && tray != null)
                 tray.ShowBalloonTip(8000, "Hallow Overlay can't show over " + exclusiveGame, exclusiveGame + " is in exclusive fullscreen - Windows doesn't let anything draw over that. Switch it to borderless (windowed fullscreen) in the game's video settings.", WF.ToolTipIcon.None);
         }
+        // The frame counter only runs while a game is running and FPS is on.
+        void RunFps()
+        {
+            bool want = S.Fps && Current != null;
+            if (want && !fps.Running && !fps.Denied && DateTime.Now >= fpsRetry) { if (!fps.Start()) fpsRetry = DateTime.Now.AddMinutes(1); }
+            else if (!want && fps.Running) fps.Stop();
+        }
         public static string ExclusiveNote(string game) { return game + " is in exclusive fullscreen - Windows can't draw anything over that. Switch it to borderless (windowed fullscreen) in the game's video settings to see the overlay."; }
 
         static ImageSource AppIcon()
@@ -272,6 +281,8 @@ namespace HallowOverlay
             var x = sampler.Latest; var cur = Current;
             var game = cur == null ? null : (cur.Game.Parent ?? cur.Game).Name;
             TimeSpan? session = cur == null ? (TimeSpan?)null : DateTime.Now - cur.Since;
+            double f, low; x.Fps = x.FpsLow = -1;
+            if (cur != null && fps.Running && fps.Read(cur.Pids, out f, out low)) { x.Fps = f; x.FpsLow = low; }
             bool off = IsOff(game);
             bool want = shown && !off && (!S.OnlyInGame || cur != null);
             if (msg != null && DateTime.Now >= msgUntil) msg = null;
@@ -284,7 +295,9 @@ namespace HallowOverlay
             else if (ov.IsVisible) ov.Hide();
             if (IsVisible)
             {
-                preview.Child = Panel.Build(S, x, game ?? "Delta Force", session ?? TimeSpan.FromMinutes(42));
+                var px = x; if (px.Fps < 0 && !fps.Denied) { px = x.Copy(); px.Fps = 144; px.FpsLow = 97; }   // what it looks like in a game
+                preview.Child = Fit(Panel.Build(S, px, game ?? "Delta Force", session ?? TimeSpan.FromMinutes(42)));
+                foot.Text = FootText();
                 state.Text = exclusiveGame != null && exclusiveGame == game ? ExclusiveNote(game) :
                     !shown ? "Hidden - press Ctrl+Shift+O (or use the tray menu) to show it again." :
                     off ? "Turned off for " + game + " (in Hallow Hub's game settings)." :
@@ -296,6 +309,7 @@ namespace HallowOverlay
         }
 
         void Toggle() { shown = !shown; Refresh(); }
+        static UIElement Fit(FrameworkElement el) { return new Viewbox { Child = el, StretchDirection = StretchDirection.DownOnly, Stretch = Stretch.Uniform }; }   // the preview shrinks a wide panel to fit
 
         // ================================================================ settings window
         UIElement Build()
@@ -355,6 +369,7 @@ namespace HallowOverlay
             sw("MIC MUTED warning", S.MicWarn, v => S.MicWarn = v); sw("CPU", S.Cpu, v => S.Cpu = v); sw("GPU load", S.Gpu, v => S.Gpu = v);
             sw("GPU temperature", S.GpuTemp, v => S.GpuTemp = v); sw("RAM", S.Ram, v => S.Ram = v); sw("Ping", S.Ping, v => S.Ping = v);
             sw("Session time", S.Session, v => S.Session = v); sw("Clock", S.Clock, v => S.Clock = v); sw("Game name", S.Game, v => S.Game = v);
+            sw("FPS and 1% low", S.Fps, v => S.Fps = v);
             sp.Children.Add(grid);
             var more = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
             Action<string, bool, Action<bool>> sw2 = (text, on, set) =>
@@ -366,14 +381,21 @@ namespace HallowOverlay
             sw2("Keep running in the tray when I close this window", S.TrayOnClose, v => S.TrayOnClose = v);
             sw2("Start with Windows (in the tray)", StartsWithWindows(), v => SetStartWithWindows(v));
             sp.Children.Add(more);
-            sp.Children.Add(new TextBlock { Text = "Ctrl+Shift+O shows or hides it. Ping goes to " + S.PingHost + " (your internet, not the game server). GPU numbers need an NVIDIA card. " +
-                "It's a normal see-through window - nothing touches the game, so it's safe with anti-cheat - but it can't draw over games in exclusive fullscreen: use borderless / windowed fullscreen.",
-                Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
+            foot = new TextBlock { Text = FootText(), Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
+            sp.Children.Add(foot);
             sp.Children.Add(new TextBlock { Text = "Hallow Overlay " + Program.Version + "  -  icons: Font Awesome Free (CC BY 4.0)", Foreground = (Brush)FindResource("Muted"), FontSize = 11, Margin = new Thickness(0, 8, 0, 0) });
             return new ScrollViewer { Content = sp, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         }
 
-        const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        string FootText()
+        {
+            return "Ctrl+Shift+O shows or hides it. Ping goes to " + S.PingHost + " (your internet, not the game server). GPU numbers need an NVIDIA card. " +
+                "FPS comes from Windows' own frame events, like PresentMon (DirectX games). " +
+                (fps.Denied ? "This Windows account isn't allowed to read them (that needs the Performance Log Users group), so FPS stays hidden. " : "") +
+                "It's a normal see-through window - nothing touches the game, so it's safe with anti-cheat - but it can't draw over games in exclusive fullscreen: use borderless / windowed fullscreen.";
+        }
+
+        const string RunKey =@"Software\Microsoft\Windows\CurrentVersion\Run";
         static bool StartsWithWindows() { using (var k = Registry.CurrentUser.OpenSubKey(RunKey)) return k != null && k.GetValue("HallowOverlay") != null; }
         static void SetStartWithWindows(bool on)
         {
@@ -393,12 +415,12 @@ namespace HallowOverlay
             tray.MouseClick += (s, e) => { if (e.Button == WF.MouseButtons.Left) ShowFromTray(); };
         }
         public void ShowFromTray() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); Refresh(); }
-        void Quit() { exiting = true; sampler.Stop(); if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
+        void Quit() { exiting = true; sampler.Stop(); try { fps.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
 
         public void SnapAll(string dir)
         {
-            var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true };
-            preview.Child = Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42));
+            var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97 };
+            preview.Child = Fit(Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)));
             state.Text = "Waiting for a game - it appears by itself when one starts.";
             Snap.Save(this, System.IO.Path.Combine(dir, "settings.png"), 760, 0);
             var w = new Window { Background = Brushes.Transparent, Content = Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)), FontFamily = new FontFamily("Segoe UI") };

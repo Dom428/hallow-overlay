@@ -27,7 +27,7 @@ namespace HallowOverlay
             finally { CloseHandle(h); }
         }
 
-        public class Running { public Game Game; public DateTime Since; public DateTime LastCount; public int Missed; public string Process; }
+        public class Running { public Game Game; public DateTime Since; public DateTime LastCount; public int Missed; public string Process; public HashSet<int> Pids = new HashSet<int>(); }
         public readonly Dictionary<string, Running> Now = new Dictionary<string, Running>();
         public Action<Game> Started; public Action<Game, DateTime> Stopped;   // Stopped gets when the session began
         public Action<Game, double> Counted;   // minutes to add to a game's playtime
@@ -36,7 +36,7 @@ namespace HallowOverlay
         public void Poll(List<Game> games)
         {
             var dirs = games.Where(g => !string.IsNullOrEmpty(g.InstallDir)).Select(g => Tuple.Create(g, g.InstallDir.TrimEnd('\\') + "\\")).ToList();
-            var seen = new Dictionary<string, string>();
+            var seen = new Dictionary<string, string>(); var pids = new Dictionary<string, HashSet<int>>();
             foreach (var p in Process.GetProcesses())
             {
                 try
@@ -44,7 +44,11 @@ namespace HallowOverlay
                     if (p.Id <= 4 || Ignore.Contains(p.ProcessName)) continue;
                     var path = PathOf(p.Id); if (path == null) continue;
                     foreach (var d in dirs)
-                        if (path.StartsWith(d.Item2, StringComparison.OrdinalIgnoreCase) && !seen.ContainsKey(d.Item1.Id)) { seen[d.Item1.Id] = p.ProcessName; break; }
+                        if (path.StartsWith(d.Item2, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!seen.ContainsKey(d.Item1.Id)) { seen[d.Item1.Id] = p.ProcessName; pids[d.Item1.Id] = new HashSet<int>(); }
+                            pids[d.Item1.Id].Add(p.Id); break;
+                        }
                 }
                 catch { }
                 finally { p.Dispose(); }
@@ -59,7 +63,7 @@ namespace HallowOverlay
                     r = new Running { Game = g, Since = now, LastCount = now, Process = seen[id] }; Now[id] = r;
                     if (Started != null) Started(g);
                 }
-                r.Missed = 0;
+                r.Missed = 0; r.Pids = pids[id];
                 var mins = (now - r.LastCount).TotalMinutes;
                 if (mins >= 1) { r.LastCount = now; if (Counted != null) Counted(r.Game, mins); }
             }
