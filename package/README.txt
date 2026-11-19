@@ -5,6 +5,10 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.8
+- Uses the Hallow accent colour you pick in Hallow Toolkit (Settings > Use the Hallow accent).
+- If it ever crashes, a report is kept on this PC and you're told next time - nothing is sent anywhere.
+
 WHAT'S NEW IN 1.7
 - Match summary: a one-line summary on the panel when a game closes, and Match history with every session's FPS, ping, stalls, servers and temperatures.
 
@@ -49,6 +53,7 @@ WHAT IT SHOWS
 
 GOOD TO KNOW
 - It's its own see-through window: nothing is injected into the game, so it's safe with anti-cheat.
+- If it ever crashes, a report is kept on this PC (%APPDATA%\HallowOverlay\crashes) and you're told next time. Nothing is sent anywhere.
 - It can't draw over games in exclusive fullscreen - use borderless / windowed fullscreen.
 - The Ping stat goes to 1.1.1.1 (your internet connection); the Game server stat pings the game's server. Games that use a relay network (Valve's SDR, for example) show the relay.
 

@@ -147,13 +147,17 @@ namespace HallowOverlay
 
         public MatchHistoryWindow(List<GameMatch> matches, bool hideServerIp)
         {
-            all = matches; hideIp = hideServerIp;
+            all = matches; hideIp = hideServerIp; BuildUi();
+        }
+        public void Rebuild() { BuildUi(); }   // after the accent colour changed
+        void BuildUi()
+        {
             Title = "Match history - Hallow Overlay"; Width = 900; Height = 620; MinWidth = 720; MinHeight = 420;
             Background = (Brush)FindResource("Bg"); Foreground = (Brush)FindResource("Text"); FontFamily = new FontFamily("Segoe UI"); FontSize = 12.5;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             var dock = new DockPanel { Margin = new Thickness(22, 16, 22, 18) };
             var top = new DockPanel { Margin = new Thickness(0, 0, 0, 12) }; DockPanel.SetDock(top, Dock.Top);
-            top.Children.Add(new TextBlock { Text = "Match history", FontSize = 20, FontWeight = FontWeights.Bold, Foreground = B("#F07820"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 18, 0) });
+            top.Children.Add(new TextBlock { Text = "Match history", FontSize = 20, FontWeight = FontWeights.Bold, Foreground = Accent.Brush(), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 18, 0) });
             DockPanel.SetDock(top.Children[0], Dock.Left);
             var chips = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             cm = new ToggleButton { Content = "Matches", Style = (Style)FindResource("Chip"), Padding = new Thickness(12, 5, 12, 5), Margin = new Thickness(0, 0, 6, 0), IsChecked = true };
@@ -190,7 +194,7 @@ namespace HallowOverlay
             foreach (var m in list)
             {
                 var mm = m; bool sel = m == picked;
-                var b = new Border { Background = sel ? B("#2E2440") : B("#1C1724"), BorderBrush = sel ? B("#F07820") : B("#2C2536"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 6), Cursor = Cursors.Hand };
+                var b = new Border { Background = sel ? B("#2E2440") : B("#1C1724"), BorderBrush = sel ? (Brush)Accent.Brush() : B("#2C2536"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 6), Cursor = Cursors.Hand };
                 var sp = new StackPanel();
                 var head = new DockPanel();
                 var when = new TextBlock { Text = m.End.ToString("ddd d MMM, HH:mm", CultureInfo.CurrentCulture), Foreground = (Brush)FindResource("Muted"), FontSize = 11.5 }; DockPanel.SetDock(when, Dock.Right); head.Children.Add(when);

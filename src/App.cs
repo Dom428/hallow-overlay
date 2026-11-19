@@ -21,14 +21,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.7.0.0")]
-[assembly: AssemblyFileVersion("1.7.0.0")]
+[assembly: AssemblyVersion("1.8.0.0")]
+[assembly: AssemblyFileVersion("1.8.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.7";
+        public const string Version = "1.8";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -46,7 +46,7 @@ namespace HallowOverlay
             int si = Array.IndexOf(args, "--snap");
             if (si >= 0 && si + 1 < args.Length)
             {
-                Snap.On = true; OverlaySettings.Frozen = true;
+                Snap.On = true; OverlaySettings.Frozen = true; Accent.Hex = Accent.Pick(OverlaySettings.Load().UseHallowAccent);
                 var sa = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown }; LoadTheme(sa);
                 new MainWindow(true).SnapAll(args[si + 1]); return 0;
             }
@@ -54,17 +54,22 @@ namespace HallowOverlay
             var mutex = new Mutex(true, @"Local\HallowOverlay", out created);
             var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\HallowOverlayShow");
             if (!created) { showEvent.Set(); return 0; }
-            var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown }; LoadTheme(app);
+            var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            Crash.Install(app);
+            Accent.Hex = Accent.Pick(OverlaySettings.Load().UseHallowAccent); LoadTheme(app);
             var w = new MainWindow(args.Contains("--tray"));
             new Thread(() => { while (showEvent.WaitOne()) w.Dispatcher.BeginInvoke(new Action(w.ShowFromTray)); }) { IsBackground = true }.Start();
             app.Run();
             GC.KeepAlive(mutex);
             return 0;
         }
-        static void LoadTheme(Application app)
+        // Theme.xaml with the accent colour in it (replaced as a whole when the accent changes)
+        public static void LoadTheme(Application app)
         {
-            using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("HallowOverlay.Theme.xaml"))
-                app.Resources.MergedDictionaries.Add((ResourceDictionary)XamlReader.Load(s));
+            string xaml;
+            using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("HallowOverlay.Theme.xaml")) using (var r = new System.IO.StreamReader(s)) xaml = r.ReadToEnd();
+            app.Resources.MergedDictionaries.Clear();
+            app.Resources.MergedDictionaries.Add((ResourceDictionary)XamlReader.Parse(Accent.Themed(xaml, Accent.Hex)));
         }
     }
 
@@ -222,10 +227,39 @@ namespace HallowOverlay
             var rescan = new DispatcherTimer { Interval = TimeSpan.FromMinutes(10) }; rescan.Tick += (s, e) => { try { games = Library.Scan(new List<Game>()); } catch { } }; rescan.Start();
             msgTimer = new DispatcherTimer(); msgTimer.Tick += (s, e) => { msgTimer.Stop(); Refresh(); };
             Link.Serve(Dispatcher, OnCommand);
+            Accent.Watch(Dispatcher, ApplyAccent);
+            Dispatcher.BeginInvoke(new Action(CheckCrash), DispatcherPriority.ApplicationIdle);
             AppDomain.CurrentDomain.ProcessExit += (s, e) => { try { fps.Stop(); net.Stop(); } catch { } };   // never leave a trace session behind
             WriteStatus(true);
-            IsVisibleChanged += (s, e) => { if (IsVisible) Dispatcher.BeginInvoke(new Action(ShowWhatsNew), DispatcherPriority.ApplicationIdle); };
+            IsVisibleChanged += (s, e) => { if (IsVisible) Dispatcher.BeginInvoke(new Action(() => { ShowWhatsNew(); ShowCrash(); }), DispatcherPriority.ApplicationIdle); };
             if (!startHidden) Show();
+        }
+
+        // ---- Hallow accent: re-theme the open windows when theme.json or the setting changes
+        void ApplyAccent()
+        {
+            var hex = Accent.Pick(S.UseHallowAccent); if (hex == Accent.Hex) return;
+            Accent.Hex = hex; Program.LoadTheme(Application.Current);
+            Content = Build(); Refresh();
+            if (histWin != null && histWin.IsLoaded) histWin.Rebuild();
+        }
+
+        // ---- crash notice: once per crash report, when the window is shown (a tray message first if it starts hidden)
+        string pendingCrash;
+        void CheckCrash()
+        {
+            var f = Crash.Files().FirstOrDefault();
+            if (f == null || System.IO.Path.GetFileName(f) == S.LastCrashShown) return;
+            pendingCrash = f;
+            if (IsVisible) ShowCrash();
+            else Balloon("Hallow Overlay closed unexpectedly last time", "A crash report is kept on this PC (nothing is sent). Open Overlay's settings to see it.", 6000);
+        }
+        void ShowCrash()
+        {
+            if (pendingCrash == null || Snap.On) return;
+            var f = pendingCrash; pendingCrash = null;
+            S.LastCrashShown = System.IO.Path.GetFileName(f); S.Save();
+            new CrashNotice(f) { Owner = this }.Show();
         }
 
         void ShowWhatsNew()
@@ -338,11 +372,12 @@ namespace HallowOverlay
         string StatusJson()
         {
             return Link.Json(new Dictionary<string, object> { { "app", "Overlay" }, { "version", Program.Version }, { "updated", DateTime.Now.ToString("s") },
-                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted }, { "matches", matches.Take(5).Select(m => m.Short()).ToArray() } });
+                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted }, { "matches", matches.Take(5).Select(m => m.Short()).ToArray() }, { "lastCrash", LastCrashIso() } });
         }
+        static string LastCrashIso() { var l = Crash.Last(); return l == null ? null : l.Value.ToString("s"); }
         void WriteStatus(bool force)
         {
-            var now = ov.IsVisible + "|" + hub.Hosted + "|" + matches.Count + "|" + string.Join("|", S.OffGames);
+            var now = ov.IsVisible + "|" + hub.Hosted + "|" + matches.Count + "|" + LastCrashIso() + "|" + string.Join("|", S.OffGames);
             if (!force && now == lastStatus) return;
             lastStatus = now; Link.WriteStatus(StatusJson());
         }
@@ -456,7 +491,7 @@ namespace HallowOverlay
             var sp = new StackPanel { Margin = new Thickness(26, 16, 26, 20) };
             var title = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
             try { title.Children.Add(new Image { Source = AppIcon(), Width = 30, Height = 30, Margin = new Thickness(0, 0, 10, 0) }); } catch { }
-            title.Children.Add(new TextBlock { Text = "HALLOW", FontSize = 22, FontWeight = FontWeights.Bold, Foreground = B("#F07820"), VerticalAlignment = VerticalAlignment.Center });
+            title.Children.Add(new TextBlock { Text = "HALLOW", FontSize = 22, FontWeight = FontWeights.Bold, Foreground = Accent.Brush(), VerticalAlignment = VerticalAlignment.Center });
             title.Children.Add(new TextBlock { Text = " OVERLAY", FontSize = 22, FontWeight = FontWeights.Light, VerticalAlignment = VerticalAlignment.Center });
             sp.Children.Add(title);
             // preview on a fake game background
@@ -523,6 +558,7 @@ namespace HallowOverlay
             };
             sw2("Only while a game is running (Steam, Battle.net, Epic, EA, Ubisoft, GOG, Riot, Xbox)", S.OnlyInGame, v => S.OnlyInGame = v);
             sw2("Keep running in the tray when I close this window", S.TrayOnClose, v => S.TrayOnClose = v);
+            sw2("Use the Hallow accent: the colour picked in Hallow Toolkit (warnings stay red and amber)", S.UseHallowAccent, v => { S.UseHallowAccent = v; Dispatcher.BeginInvoke(new Action(ApplyAccent)); });
             sw2("Use the Hallow icon: when Hallow Hub is running, its one tray icon has Overlay's menu (Overlay's own icon hides)", S.UseHallowIcon, v => { S.UseHallowIcon = v; hub.CheckNow(); });
             sw2("Start with Windows (in the tray)", StartsWithWindows(), v => SetStartWithWindows(v));
             sp.Children.Add(more);
@@ -575,7 +611,7 @@ namespace HallowOverlay
                 () => T.Scale < 0.95 ? "0.85" : T.Scale > 1.1 ? "1.25" : "1", v => T.Scale = double.Parse(v, System.Globalization.CultureInfo.InvariantCulture)));
             var op = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
             op.Children.Add(new TextBlock { Text = "Background", Width = 120, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold }); DockPanel.SetDock(op.Children[0], Dock.Left);
-            var sl = new Slider { Style = (Style)FindResource("HFader"), Minimum = 0.2, Maximum = 1, Value = T.Opacity, Foreground = B("#F07820"), VerticalAlignment = VerticalAlignment.Center, Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
+            var sl = new Slider { Style = (Style)FindResource("HFader"), Minimum = 0.2, Maximum = 1, Value = T.Opacity, Foreground = Accent.Brush(), VerticalAlignment = VerticalAlignment.Center, Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
             sl.ValueChanged += (s, e) => { T.Opacity = Math.Round(sl.Value, 2); S.Save(); Refresh(); };
             op.Children.Add(sl); lookHost.Children.Add(op);
             lookHost.Children.Add(new TextBlock { Text = "Show", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 6) });
@@ -699,6 +735,7 @@ namespace HallowOverlay
             hw.Pick(1, false); Snap.Save(hw, System.IO.Path.Combine(dir, "history-2.png"), 900, 620);
             hw.Pick(0, true); Snap.Save(hw, System.IO.Path.Combine(dir, "history-servers.png"), 900, 620);
             Snap.Save(new MatchHistoryWindow(new List<GameMatch>(), true), System.IO.Path.Combine(dir, "history-empty.png"), 900, 300);
+            Snap.Save(new CrashNotice(System.IO.Path.Combine(Crash.Dir, "2026-11-19 20-14-03.txt")), System.IO.Path.Combine(dir, "crash-notice.png"), 470, 0);
             S.Row = false; x.MicMuted = false;
             var w2 = new Window { Background = Brushes.Transparent, Content = Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)), FontFamily = new FontFamily("Segoe UI") };
             Snap.Save(w2, System.IO.Path.Combine(dir, "column.png"), 220, 0);

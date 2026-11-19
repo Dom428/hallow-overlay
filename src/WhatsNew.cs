@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.8", new[] { "Uses the Hallow accent colour you pick in Hallow Toolkit (Settings > Use the Hallow accent)", "If Hallow Overlay ever crashes, a report is kept on this PC and you're told next time - nothing is sent anywhere" }),
             Tuple.Create("1.7", new[] { "Match summary: when a game closes, a one-line summary shows on the panel (FPS, ping, stalls)", "Match history (settings or the tray menu): every session with its details, and a Servers view of the regions you got" }),
             Tuple.Create("1.6", new[] { "One Hallow icon: with Hallow Hub running, Overlay's menu lives in Hub's tray icon and Overlay's own icon hides (Settings > Use the Hallow icon)" }),
             Tuple.Create("1.5", new[] { "Game server: the server your game is talking to, its region, ping, loss and stalls (Show > Game server)", "\"Server changed\" when the game moves you, and the game's up / down traffic" }),
@@ -41,14 +42,14 @@ namespace HallowOverlay
             Background = (Brush)FindResource("Bg"); Foreground = (Brush)FindResource("Text");
             FontFamily = new FontFamily("Segoe UI"); FontSize = 12.5; WindowStartupLocation = WindowStartupLocation.CenterOwner;
             var sp = new StackPanel { Margin = new Thickness(26, 20, 26, 20) };
-            sp.Children.Add(new TextBlock { Text = "What's new in Hallow Overlay " + Program.Version, FontSize = 20, FontWeight = FontWeights.Bold, Foreground = B("#F07820"), Margin = new Thickness(0, 0, 0, 12) });
+            sp.Children.Add(new TextBlock { Text = "What's new in Hallow Overlay " + Program.Version, FontSize = 20, FontWeight = FontWeights.Bold, Foreground = Accent.Brush(), Margin = new Thickness(0, 0, 0, 12) });
             foreach (var v in items)
             {
                 sp.Children.Add(new TextBlock { Text = v.Item1, FontWeight = FontWeights.Bold, Foreground = B("#A98BE0"), Margin = new Thickness(0, 6, 0, 3) });
                 foreach (var line in v.Item2)
                 {
                     var d = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
-                    var dot = new TextBlock { Text = "•", Foreground = B("#F07820"), Width = 16, FontWeight = FontWeights.Bold }; DockPanel.SetDock(dot, Dock.Left);
+                    var dot = new TextBlock { Text = "•", Foreground = Accent.Brush(), Width = 16, FontWeight = FontWeights.Bold }; DockPanel.SetDock(dot, Dock.Left);
                     d.Children.Add(dot); d.Children.Add(new TextBlock { Text = line, TextWrapping = TextWrapping.Wrap });
                     sp.Children.Add(d);
                 }
