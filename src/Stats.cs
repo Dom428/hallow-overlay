@@ -25,7 +25,8 @@ namespace HallowOverlay
         [DataMember] public bool Cpu = true, Gpu = true, GpuTemp = true, Ram = true, Ping = true, Clock = true, Session = true, MicWarn = true, Game = false;
         [DataMember] public bool Fps = true;             // frames per second and 1% low (when Windows allows reading them)
         [DataMember] public string PingHost = "1.1.1.1";
-        [DataMember] public bool Hotkey = true;          // Ctrl+Shift+O shows / hides it
+        [DataMember] public bool Hotkey = true;          // 1.0-1.13: Ctrl+Shift+O / Ctrl+Shift+F9 on or off (read once into Hotkeys)
+        [DataMember] public Dictionary<string, string> Hotkeys;   // your own hotkeys by action ("" = off); null / missing = the defaults
         [DataMember] public bool TrayOnClose = true;
         [DataMember] public List<string> OffGames = new List<string>();   // games the overlay stays off in (set by Hallow Hub through the link)
         [DataMember] public string LastSeenVersion = "";
@@ -49,14 +50,18 @@ namespace HallowOverlay
         [DataMember(EmitDefaultValue = false)] public Dictionary<string, OverlaySettings> PerGame = new Dictionary<string, OverlaySettings>();
         [OnDeserializing] void D(StreamingContext c)
         {
-            Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; TrayOnClose = true;
+            Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; Hotkeys = null; TrayOnClose = true;
             OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
             GpuClocks = GpuPower = Vram = FrameGraph = false; Styles = null; TextSize = "m"; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; LastCrashShown = ""; AutoUpdate = true; LastUpdateCheck = ""; ToldUpdate = ""; Fps01 = false; LogCsv = false; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
         }
-        [OnDeserialized] void Fix(StreamingContext c) { if (OffGames == null) OffGames = new List<string>(); }
+        [OnDeserialized] void Fix(StreamingContext c)
+        {
+            if (OffGames == null) OffGames = new List<string>();
+            if (Hotkeys == null && !Hotkey) Hotkeys = new Dictionary<string, string> { { "toggle", "" }, { "bench", "" } };   // hotkeys were turned off before 1.14
+        }
 
         // A copy of the look for a game's own settings (no global lists inside).
-        public OverlaySettings LookCopy() { var l = (OverlaySettings)MemberwiseClone(); l.PerGame = null; l.OffGames = new List<string>(); l.Styles = Styles == null ? null : Styles.Select(x => x.Copy()).ToList(); return l; }
+        public OverlaySettings LookCopy() { var l = (OverlaySettings)MemberwiseClone(); l.PerGame = null; l.Hotkeys = null; l.OffGames = new List<string>(); l.Styles = Styles == null ? null : Styles.Select(x => x.Copy()).ToList(); return l; }
         // The settings a game's own look is stored under (case-insensitive), or null.
         public string PerGameKey(string game)
         {

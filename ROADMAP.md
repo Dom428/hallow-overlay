@@ -18,6 +18,7 @@
 | **1.11** | Updates itself from GitHub (asks first, SHA-256 checked); FPS for Vulkan / OpenGL games from the graphics kernel's present events (no admin); 0.1% lows |
 | **1.12** | Benchmark mode (Ctrl+Shift+F9): average FPS, 1% / 0.1% lows, frame-time percentiles, stutters and a chart, saved as PNG + CSV; optional CSV log of every stat |
 | **1.13** | Layout editor: order of the stats, own labels, a colour per stat, text or text + a small graph of the last minute, text size (per game too) |
+| **1.14** | Your own hotkeys: every hotkey (show / hide, benchmark, plus new optional only-when-wrong and open settings) rebindable with a press-the-keys box, Off per hotkey, Reset to defaults; refuses its own duplicates and combos another app owns (keeps the old one) |
 
 ## Next
 
@@ -47,4 +48,4 @@ What MSI Afterburner + RivaTuner Statistics Server, the Xbox Game Bar performanc
 - **0.1% lows, benchmark mode with a report** (Afterburner, NVIDIA app) - buildable -> 1.11 / 1.12
 - **Logging to a file** (Afterburner's hardware monitor log) - buildable as CSV -> 1.12
 - **OSD layout editor: order, labels, colours, font size, text or graph per item** (RTSS / Afterburner) - buildable -> 1.13
-- **Your own hotkeys** (Afterburner) - buildable, later: Ctrl+Shift+O and the benchmark hotkey are fixed for now
+- **Your own hotkeys** (Afterburner) - buildable -> 1.14

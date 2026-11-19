@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.14", new[] { "Your own hotkeys: change any of them in the settings (click the box, press the keys), turn one off, or reset to the defaults", "If another app already owns a combo you're told so and the old one keeps working; new optional hotkeys for \"Only when something's wrong\" and opening the settings" }),
             Tuple.Create("1.13", new[] { "Layout editor: put the stats in your order, give them your own labels and colours, add a small graph of the last minute, and pick the text size" }),
             Tuple.Create("1.12", new[] { "Benchmark: Ctrl+Shift+F9 starts and stops it - average FPS, 1% and 0.1% lows, frame-time percentiles and a chart (PNG + CSV)", "Optional CSV log of every stat while you play" }),
             Tuple.Create("1.11", new[] { "Updates itself: it looks once a day and asks before installing (checked against GitHub's checksum)", "FPS for Vulkan and OpenGL games too, and an optional 0.1% low" }),

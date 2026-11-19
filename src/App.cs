@@ -10,6 +10,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Markup;
 using System.Windows.Media;
@@ -21,14 +22,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.13.0.0")]
-[assembly: AssemblyFileVersion("1.13.0.0")]
+[assembly: AssemblyVersion("1.14.0.0")]
+[assembly: AssemblyFileVersion("1.14.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.13";
+        public const string Version = "1.14";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -237,7 +238,6 @@ namespace HallowOverlay
     public class MainWindow : Window
     {
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int val, int size);
-        [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr h, int id, uint mods, uint vk);
         static SolidColorBrush B(string hex) { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
 
         readonly OverlaySettings S = OverlaySettings.Load();
@@ -261,6 +261,8 @@ namespace HallowOverlay
             Background = (Brush)FindResource("Bg"); Foreground = (Brush)FindResource("Text"); FontFamily = new FontFamily("Segoe UI"); FontSize = 12.5;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             try { Icon = AppIcon(); } catch { }
+            if (S.Hotkeys == null) S.Hotkeys = new Dictionary<string, string>();
+            keys = new HotkeySet(IntPtr.Zero, S.Hotkeys);   // names only; the registered one replaces it below (never in --snap)
             Content = Build();
             SourceInitialized += (s, e) => { int dark = 1; DwmSetWindowAttribute(new WindowInteropHelper(this).Handle, 20, ref dark, 4); };
             Closing += (s, e) =>
@@ -268,7 +270,7 @@ namespace HallowOverlay
                 if (!exiting && S.TrayOnClose && !Snap.On)
                 {
                     e.Cancel = true; Hide();
-                    if (!toldTray && tray != null) { toldTray = true; Balloon("Hallow Overlay", "Still running - the overlay shows up when you play. Ctrl+Shift+O hides it. Right-click the icon to quit.", 4000); }
+                    if (!toldTray && tray != null) { toldTray = true; Balloon("Hallow Overlay", "Still running - the overlay shows up when you play. " + (KeyText("toggle") != null ? KeyText("toggle") + " hides it. " : "") + "Right-click the icon to quit.", 4000); }
                 }
                 else Quit();
             };
@@ -277,10 +279,10 @@ namespace HallowOverlay
             AddTestGame();
             sampler.PingHost = S.PingHost; sampler.Start();
             SetupTray();
-            // hotkey: Ctrl+Shift+O on this window's handle (it exists even while the window is hidden)
+            // your own hotkeys (1.14) on this window's handle (it exists even while the window is hidden)
             var hwnd = new WindowInteropHelper(this).EnsureHandle();
-            if (S.Hotkey) { RegisterHotKey(hwnd, 1, 0x4006, 0x4F); RegisterHotKey(hwnd, 2, 0x4006, 0x78); }   // MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT: 'O', F9 (benchmark)
-            HwndSource.FromHwnd(hwnd).AddHook((IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) => { if (msg == 0x0312 && wp.ToInt32() == 1) { Toggle(); handled = true; } if (msg == 0x0312 && wp.ToInt32() == 2) { ToggleBench(); handled = true; } return IntPtr.Zero; });
+            keys = new HotkeySet(hwnd, S.Hotkeys); keyFails = keys.RegisterAll(); ShowHotkeys();
+            HwndSource.FromHwnd(hwnd).AddHook((IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) => { if (msg == 0x0312) { var a = HotkeySet.ActionOf(wp.ToInt32()); if (a != null) { Invoke(a); handled = true; } } return IntPtr.Zero; });
             tick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) }; tick.Tick += (s, e) => Refresh(); tick.Start();
             poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) }; poll.Tick += (s, e) => { try { tracker.Poll(games.Concat(games.SelectMany(g => g.Alts)).ToList()); } catch { } CheckExclusive(); RunFps(); RunNet(); }; poll.Start();
             var rescan = new DispatcherTimer { Interval = TimeSpan.FromMinutes(10) }; rescan.Tick += (s, e) => { try { games = Library.Scan(new List<Game>()); } catch { } AddTestGame(); }; rescan.Start();
@@ -381,7 +383,7 @@ namespace HallowOverlay
             if (cur == null) { ShowMessage("Start a game first - the benchmark measures its frames", false, 4); return; }
             if (!fps.Running && !fps.Start()) { ShowMessage(fps.Denied ? "Benchmarks need FPS, which Windows doesn't allow on this account" : "Couldn't start the frame counter", false, 5); return; }
             fps.BeginRecording(); benchOn = true; benchStart = DateTime.Now; benchGame = (cur.Game.Parent ?? cur.Game).Name; benchPids = new HashSet<int>(cur.Pids);
-            ShowMessage("Benchmark started - Ctrl+Shift+F9 stops it", false, 3);
+            ShowMessage("Benchmark started - " + (KeyText("bench") ?? "the tray menu") + " stops it", false, 3);
         }
         void StopBench()
         {
@@ -513,7 +515,7 @@ namespace HallowOverlay
         string StatusJson()
         {
             var d = new Dictionary<string, object> { { "app", "Overlay" }, { "version", Program.Version }, { "updated", DateTime.Now.ToString("s") },
-                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted }, { "matches", matches.Take(5).Select(m => m.Short()).ToArray() }, { "lastCrash", LastCrashIso() } };
+                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted }, { "matches", matches.Take(5).Select(m => m.Short()).ToArray() }, { "lastCrash", LastCrashIso() }, { "hotkeys", HotkeySet.Actions.ToDictionary(a => a.Id, a => (object)(keys == null ? a.Default : keys.Text(a.Id))) } };
             if (live != null) d["live"] = live;
             if (testMode) d["testMessage"] = lastMessage;   // Hallow Remote's Live stats tab
             return Link.Json(d);
@@ -625,7 +627,7 @@ namespace HallowOverlay
                 preview.Child = Fit(Panel.Build(pl, px, editGame ?? game ?? "Delta Force", session ?? TimeSpan.FromMinutes(42)));
                 foot.Text = FootText(); serverInfo.Text = ServerText(cur != null);
                 state.Text = exclusiveGame != null && exclusiveGame == game ? ExclusiveNote(game) :
-                    !shown ? "Hidden - press Ctrl+Shift+O (or use the tray menu) to show it again." :
+                    !shown ? "Hidden - " + (KeyText("toggle") != null ? "press " + KeyText("toggle") + " (or use the tray menu)" : "use the tray menu") + " to show it again." :
                     off ? "Turned off for " + game + " (in Hallow Hub's game settings)." :
                     cur != null ? "Showing over " + game + "." : S.OnlyInGame ? "Waiting for a game - it appears by itself when one starts." : "Showing on your screen now.";
                 state.Foreground = exclusiveGame != null && exclusiveGame == game ? B("#F0BE5A") : (Brush)FindResource("Muted");
@@ -733,7 +735,9 @@ namespace HallowOverlay
             tool("Benchmarks", () => OpenFolder(BenchReport.Folder)); tool("Last benchmark", () => { if (lastBench != null && System.IO.File.Exists(lastBench)) OpenFile(lastBench); else OpenFolder(BenchReport.Folder); });
             tool("Logs", () => OpenFolder(StatLog.Folder));
             sp.Children.Add(tools);
-            sp.Children.Add(new TextBlock { Text = "Benchmark: Ctrl+Shift+F9 starts it while you play and stops it - you get average FPS, 1% and 0.1% lows, frame-time percentiles and a chart (PNG + CSV in Documents\\Hallow Overlay\\Benchmarks).", Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) });
+            benchHelp = new TextBlock { Text = BenchHelp(), Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) };
+            sp.Children.Add(benchHelp);
+            BuildHotkeys(sp);
             var more = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
             Action<string, bool, Action<bool>> sw2 = (text, on, set) =>
             {
@@ -852,9 +856,99 @@ namespace HallowOverlay
             return "Server: " + where + ". " + how + relay;
         }
 
+        // ---- your own hotkeys (1.14)
+        HotkeySet keys; Dictionary<string, string> keyFails = new Dictionary<string, string>(); bool keysPaused; string capturing;
+        TextBlock benchHelp, hkMsg; readonly Dictionary<string, TextBox> hkBoxes = new Dictionary<string, TextBox>(); readonly Dictionary<string, TextBlock> hkNotes = new Dictionary<string, TextBlock>();
+        // the combo that works now for an action, or null (off, or another app owns it)
+        string KeyText(string id) { if (keys == null) return null; var t = keys.Text(id); return t.Length == 0 || (keys.Live && !keys.Registered(id)) ? null : t; }
+        string KeyTail(string id) { var t = KeyText(id); return t == null ? "" : "   (" + t + ")"; }
+        string BenchHelp() { return "Benchmark: " + (KeyText("bench") != null ? KeyText("bench") + " starts it while you play and stops it" : "start and stop it from the tray menu while you play") + " - you get average FPS, 1% and 0.1% lows, frame-time percentiles and a chart (PNG + CSV in Documents\\Hallow Overlay\\Benchmarks)."; }
+
+        void BuildHotkeys(StackPanel sp)
+        {
+            sp.Children.Add(new TextBlock { Text = "Hotkeys", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 14, 0, 2) });
+            sp.Children.Add(new TextBlock { Text = "Click a box and press the keys you want (Esc cancels). They work everywhere, in games too.", Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) });
+            foreach (var a in HotkeySet.Actions)
+            {
+                var id = a.Id;
+                var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+                var name = new TextBlock { Text = a.Name, Width = 260, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap }; DockPanel.SetDock(name, Dock.Left); row.Children.Add(name);
+                var box = new TextBox { Style = (Style)FindResource("Field"), Width = 170, IsReadOnly = true, IsReadOnlyCaretVisible = false, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Click, then press the keys" };
+                DockPanel.SetDock(box, Dock.Left); row.Children.Add(box); hkBoxes[id] = box;
+                var off = new Button { Content = "Off", Style = (Style)FindResource("Btn"), Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(10, 3, 10, 3), VerticalAlignment = VerticalAlignment.Center, ToolTip = "No hotkey for this" };
+                DockPanel.SetDock(off, Dock.Left); row.Children.Add(off);
+                var note = new TextBlock { Foreground = B("#F0BE5A"), FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0), TextWrapping = TextWrapping.Wrap }; row.Children.Add(note); hkNotes[id] = note;
+                box.GotKeyboardFocus += (s, e) => { capturing = id; PauseKeys(); box.Text = "Press the keys..."; Say("Press the combo for \"" + a.Name + "\" - Esc cancels.", false); };
+                box.LostKeyboardFocus += (s, e) => { if (capturing == id) { capturing = null; ResumeKeys(); ShowHotkeys(); } };
+                box.PreviewKeyDown += (s, e) =>
+                {
+                    var k = e.Key == Key.System ? e.SystemKey : e.Key; var mods = Keyboard.Modifiers;
+                    if (k == Key.Tab && mods == ModifierKeys.None) return;   // let Tab move on
+                    e.Handled = true;
+                    if (k == Key.Escape && mods == ModifierKeys.None) { EndCapture(id, null); return; }
+                    var c = Combo.FromKeys(k, mods);
+                    if (c == null) { box.Text = Combo.ModsText(mods) + "..."; return; }
+                    EndCapture(id, c);
+                };
+                off.Click += (s, e) => SetHotkey(id, new Combo());
+                sp.Children.Add(row);
+            }
+            var bottom = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+            var reset = new Button { Content = "Reset to defaults", Style = (Style)FindResource("Btn"), Padding = new Thickness(10, 3, 10, 3) };
+            reset.Click += (s, e) =>
+            {
+                keyFails = keys.ResetDefaults(); S.Save();
+                Say(keyFails.Count == 0 ? "Back to the defaults: " + string.Join(", ", HotkeySet.Actions.Where(x => x.Default != "").Select(x => x.Default + " " + x.Name.ToLowerInvariant())) + "." : string.Join(" ", keyFails.Values), keyFails.Count > 0);
+                ShowHotkeys();
+            };
+            bottom.Children.Add(reset);
+            hkMsg = new TextBlock { Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0), MaxWidth = 520 };
+            bottom.Children.Add(hkMsg);
+            sp.Children.Add(bottom);
+            ShowHotkeys();
+        }
+        void Say(string text, bool warn) { if (hkMsg == null) return; hkMsg.Text = text ?? ""; hkMsg.Foreground = warn ? B("#F0BE5A") : (Brush)FindResource("Muted"); }
+        // While a capture box has focus our own hotkeys are let go, so pressing the current combo reaches the box instead of firing.
+        void PauseKeys() { if (keysPaused || keys == null || !keys.Live) return; keys.UnregisterAll(); keysPaused = true; }
+        void ResumeKeys() { if (!keysPaused) return; keysPaused = false; keyFails = keys.RegisterAll(); }
+        void EndCapture(string id, Combo? c)
+        {
+            capturing = null; ResumeKeys();
+            if (c != null) SetHotkey(id, c.Value); else { Say("", false); ShowHotkeys(); }
+            Keyboard.ClearFocus();
+        }
+        void SetHotkey(string id, Combo c)
+        {
+            var err = keys.Change(id, c);
+            var a = HotkeySet.Find(id);
+            if (err == null) { keyFails.Remove(id); S.Save(); Say(c.IsOff ? "\"" + a.Name + "\" has no hotkey now." : c + " now does \"" + a.Name + "\".", false); }
+            else Say(err, true);
+            ShowHotkeys();
+        }
+        // The boxes, the notes next to them and every text that names a hotkey.
+        void ShowHotkeys()
+        {
+            foreach (var a in HotkeySet.Actions)
+            {
+                TextBox box; if (hkBoxes.TryGetValue(a.Id, out box) && capturing != a.Id) { var t = keys.Text(a.Id); box.Text = t.Length == 0 ? "Off" : t; box.Foreground = t.Length == 0 ? (Brush)FindResource("Muted") : (Brush)FindResource("Text"); }
+                TextBlock n; if (hkNotes.TryGetValue(a.Id, out n)) n.Text = keyFails.ContainsKey(a.Id) ? "Taken by another app - not working" : a.Default != "" && keys.Text(a.Id) != a.Default && keys.Text(a.Id) != "" ? "default " + a.Default : "";
+            }
+            if (hkMsg != null && hkMsg.Text.Length == 0 && keyFails.Count > 0) Say(string.Join(" ", keyFails.Values), true);
+            if (benchHelp != null) benchHelp.Text = BenchHelp();
+            if (foot != null) foot.Text = FootText();
+            if (trayShow != null) trayShow.Text = "Show the overlay" + KeyTail("toggle");
+        }
+        // --snap: the hotkeys section with a combo another app owns
+        public void SnapHotkeys(string dir)
+        {
+            S.Hotkeys["only-bad"] = "Ctrl+Alt+B";
+            keyFails = new Dictionary<string, string> { { "bench", "Ctrl+Shift+F9 is already taken by another app (Windows gives each combo to one app) - pick another one or close that app." } };
+            hkMsg.Text = ""; ShowHotkeys();
+        }
+
         string FootText()
         {
-            return "Ctrl+Shift+O shows or hides it. Ping goes to " + S.PingHost + " (your internet, not the game server). GPU numbers need an NVIDIA card. " +
+            return (KeyText("toggle") != null ? KeyText("toggle") + " shows or hides it. " : "") + "Ping goes to " + S.PingHost + " (your internet, not the game server). GPU numbers need an NVIDIA card. " +
                 "FPS comes from Windows' own frame events, like PresentMon (DirectX, Vulkan and OpenGL games). " +
                 (fps.Denied ? "This Windows account isn't allowed to read them (that needs the Performance Log Users group), so FPS stays hidden. " : "") +
                 "It's a normal see-through window - nothing touches the game, so it's safe with anti-cheat - but it can't draw over games in exclusive fullscreen: use borderless / windowed fullscreen.";
@@ -873,11 +967,11 @@ namespace HallowOverlay
             try { tray.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location); } catch { tray.Icon = System.Drawing.SystemIcons.Application; }
             var menu = new WF.ContextMenuStrip();
             var open = new WF.ToolStripMenuItem("Overlay settings"); open.Font = new System.Drawing.Font(open.Font, System.Drawing.FontStyle.Bold); open.Click += (s, e) => ShowFromTray(); menu.Items.Add(open);
-            trayShow = new WF.ToolStripMenuItem("Show the overlay   (Ctrl+Shift+O)") { Checked = true }; trayShow.Click += (s, e) => Dispatcher.BeginInvoke(new Action(Toggle)); menu.Items.Add(trayShow);
+            trayShow = new WF.ToolStripMenuItem("Show the overlay" + KeyTail("toggle")) { Checked = true }; trayShow.Click += (s, e) => Dispatcher.BeginInvoke(new Action(Toggle)); menu.Items.Add(trayShow);
             trayBad = new WF.ToolStripMenuItem("Only when something's wrong"); trayBad.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ToggleOnlyBad)); menu.Items.Add(trayBad);
             menu.Opening += (s, e) => { trayBad.Checked = CurrentLook.OnlyBad; };
-            var bench = new WF.ToolStripMenuItem("Start benchmark   (Ctrl+Shift+F9)"); bench.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ToggleBench)); menu.Items.Add(bench);
-            menu.Opening += (s, e) => { bench.Text = (benchOn ? "Stop" : "Start") + " benchmark   (Ctrl+Shift+F9)"; };
+            var bench = new WF.ToolStripMenuItem("Start benchmark" + KeyTail("bench")); bench.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ToggleBench)); menu.Items.Add(bench);
+            menu.Opening += (s, e) => { bench.Text = (benchOn ? "Stop" : "Start") + " benchmark" + KeyTail("bench"); trayShow.Text = "Show the overlay" + KeyTail("toggle"); trayBad.Text = "Only when something's wrong" + KeyTail("only-bad"); };
             var hist = new WF.ToolStripMenuItem("Match history"); hist.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ShowHistory)); menu.Items.Add(hist);
             menu.Items.Add(new WF.ToolStripSeparator());
             var quit = new WF.ToolStripMenuItem("Quit"); quit.Click += (s, e) => Quit(); menu.Items.Add(quit);
@@ -888,7 +982,7 @@ namespace HallowOverlay
             hub.Start();
         }
         public void ShowFromTray() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); Refresh(); }
-        void Quit() { exiting = true; hub.Stop(); try { if (benchOn) StopBench(); statLog.Close(); } catch { } try { var m = rec.End(); if (m != null) MatchStore.Add(matches, m); } catch { } sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
+        void Quit() { exiting = true; hub.Stop(); try { if (keys != null && keys.Live) keys.UnregisterAll(); } catch { } try { if (benchOn) StopBench(); statLog.Close(); } catch { } try { var m = rec.End(); if (m != null) MatchStore.Add(matches, m); } catch { } sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
 
         public void SnapAll(string dir)
         {
@@ -955,6 +1049,7 @@ namespace HallowOverlay
                 ly.Row = false; one("layout-column.png", Panel.Build(ly, lx, "Delta Force", TimeSpan.FromMinutes(42)), 340);
                 ly.Row = true; Snap.Save(new LayoutWindow(ly, "Delta Force", () => { }), System.IO.Path.Combine(dir, "layout-editor.png"), 720, 0);
             }
+            SnapHotkeys(dir); Snap.Save(this, System.IO.Path.Combine(dir, "settings-hotkeys.png"), 760, 0);
             Snap.Save(new CrashNotice(System.IO.Path.Combine(Crash.Dir, "2026-11-19 20-14-03.txt")), System.IO.Path.Combine(dir, "crash-notice.png"), 470, 0);
             S.Row = false; x.MicMuted = false;
             var w2 = new Window { Background = Brushes.Transparent, Content = Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)), FontFamily = new FontFamily("Segoe UI") };

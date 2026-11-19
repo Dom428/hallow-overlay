@@ -5,6 +5,11 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.14
+- Your own hotkeys: change any of them in the settings (click the box, press the keys), turn one off, or reset to the defaults.
+- A combo another app already owns is refused with a message, and the old one keeps working.
+- New optional hotkeys: "Only when something's wrong" on / off, and open the settings.
+
 WHAT'S NEW IN 1.13
 - Layout editor: your own order, labels, colours, small graphs of the last minute, and text size.
 
@@ -71,7 +76,7 @@ WHAT IT SHOWS
 - Any corner, one line or a column, three sizes, see-through background - and a different one per game if you like
 - Only when something's wrong: stats show up only while they're in trouble (GPU hot, ping high, RAM almost full)
 - Packet loss and jitter next to ping
-- Ctrl+Shift+O shows or hides it
+- Ctrl+Shift+O shows or hides it (change it, or any hotkey, in the settings)
 - Ctrl+Shift+F9 starts and stops a benchmark: average FPS, 1% and 0.1% lows and a frame-time chart, saved in Documents\Hallow Overlay\Benchmarks
 - Optional: a CSV log of every stat while you play (Documents\Hallow Overlay\Logs)
 - With Hallow Hub running, Overlay's menu is in Hub's one Hallow icon (turn off "Use the Hallow icon" to keep Overlay's own)
