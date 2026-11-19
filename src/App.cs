@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -20,14 +21,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.4";
+        public const string Version = "1.5";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -76,7 +77,7 @@ namespace HallowOverlay
         public static FrameworkElement Build(OverlaySettings s, Sample x, string game, TimeSpan? session, string msg, bool strong, bool msgOnly)
         {
             var k = s.Scale; var items = new List<FrameworkElement>();
-            if (msgOnly) { s = new OverlaySettings { Scale = s.Scale, Row = s.Row, Opacity = s.Opacity, MicWarn = false, Cpu = false, Gpu = false, GpuTemp = false, Ram = false, Ping = false, Clock = false, Session = false, Game = false, Fps = false, NowPlaying = false }; }
+            if (msgOnly) { s = new OverlaySettings { Scale = s.Scale, Row = s.Row, Opacity = s.Opacity, MicWarn = false, Cpu = false, Gpu = false, GpuTemp = false, Ram = false, Ping = false, Clock = false, Session = false, Game = false, Fps = false, NowPlaying = false, Server = false, Traffic = false }; }
             bool bad = s.OnlyBad;   // only stats that are in trouble (and the MIC MUTED warning / messages)
             Action<string, string, int> item = (icon, text, level) =>
             {
@@ -111,6 +112,16 @@ namespace HallowOverlay
                 }
                 item("signal", text, lv);
             }
+            if (s.Server && x.ServerLabel != null)
+            {
+                var text = x.ServerLabel + "  " + (x.ServerMs >= 0 ? (x.ServerApprox ? "~" : "") + x.ServerMs.ToString("0") + " ms" : "no ping");
+                if (x.ServerLoss >= 0) text += "  " + x.ServerLoss.ToString("0.#") + "% loss";
+                if (x.Stalls > 0) text += "  " + x.Stalls + (x.Stalls == 1 ? " stall" : " stalls");
+                int lv = x.ServerMs > s.HighPing + 70 ? 2 : x.ServerMs > s.HighPing ? 1 : 0;
+                lv = Math.Max(lv, x.ServerLoss >= 5 ? 2 : x.ServerLoss >= 2 ? 1 : 0); if (x.Stalls >= 3) lv = Math.Max(lv, 2); else if (x.Stalls > 0) lv = Math.Max(lv, 1);
+                item("server", text, lv);
+            }
+            if (s.Traffic && x.UpKbps >= 0) item("arrow-right-arrow-left", "\u2191" + x.UpKbps.ToString("0") + "  \u2193" + x.DownKbps.ToString("0") + " kbps", 0);
             if (s.NowPlaying && !string.IsNullOrEmpty(x.NowPlaying)) item("music", x.NowPlaying.Length > 48 ? x.NowPlaying.Substring(0, 47) + "\u2026" : x.NowPlaying, 0);
             if (s.Clock) item("clock", DateTime.Now.ToString("HH:mm"), 0);
             var list = new StackPanel { Orientation = s.Row ? Orientation.Horizontal : Orientation.Vertical };
@@ -207,10 +218,11 @@ namespace HallowOverlay
             if (S.Hotkey) RegisterHotKey(hwnd, 1, 0x4006, 0x4F);   // MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'O'
             HwndSource.FromHwnd(hwnd).AddHook((IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) => { if (msg == 0x0312 && wp.ToInt32() == 1) { Toggle(); handled = true; } return IntPtr.Zero; });
             tick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) }; tick.Tick += (s, e) => Refresh(); tick.Start();
-            poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) }; poll.Tick += (s, e) => { try { tracker.Poll(games.Concat(games.SelectMany(g => g.Alts)).ToList()); } catch { } CheckExclusive(); RunFps(); }; poll.Start();
+            poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) }; poll.Tick += (s, e) => { try { tracker.Poll(games.Concat(games.SelectMany(g => g.Alts)).ToList()); } catch { } CheckExclusive(); RunFps(); RunNet(); }; poll.Start();
             var rescan = new DispatcherTimer { Interval = TimeSpan.FromMinutes(10) }; rescan.Tick += (s, e) => { try { games = Library.Scan(new List<Game>()); } catch { } }; rescan.Start();
             msgTimer = new DispatcherTimer(); msgTimer.Tick += (s, e) => { msgTimer.Stop(); Refresh(); };
             Link.Serve(Dispatcher, OnCommand);
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => { try { fps.Stop(); net.Stop(); } catch { } };   // never leave a trace session behind
             WriteStatus(true);
             IsVisibleChanged += (s, e) => { if (IsVisible) Dispatcher.BeginInvoke(new Action(ShowWhatsNew), DispatcherPriority.ApplicationIdle); };
             if (!startHidden) Show();
@@ -278,6 +290,19 @@ namespace HallowOverlay
                 tray.ShowBalloonTip(8000, "Hallow Overlay can't show over " + exclusiveGame, exclusiveGame + " is in exclusive fullscreen - Windows doesn't let anything draw over that. Switch it to borderless (windowed fullscreen) in the game's video settings.", WF.ToolTipIcon.None);
         }
         // The frame counter only runs while a game is running and FPS is on.
+        // The game server finder only runs while a game is running and its Server or traffic stat is on.
+        readonly NetMonitor net = new NetMonitor(); readonly ServerPing serverPing = new ServerPing(); DateTime netRetry; int netChanges; TextBlock serverInfo;
+        void RunNet()
+        {
+            var cur = Current; var look = S.LookFor(cur == null ? null : (cur.Game.Parent ?? cur.Game).Name);
+            bool want = cur != null && (look.Server || look.Traffic);
+            if (want)
+            {
+                net.SetPids(cur.Pids);
+                if (!net.Running && !net.Denied && DateTime.Now >= netRetry) { if (!net.Start()) netRetry = DateTime.Now.AddMinutes(1); netChanges = net.Finder.Changes; }
+            }
+            else if (net.Running) { net.Stop(); serverPing.Set(null); }
+        }
         void RunFps()
         {
             bool want = S.Fps && Current != null;
@@ -302,6 +327,20 @@ namespace HallowOverlay
             TimeSpan? session = cur == null ? (TimeSpan?)null : DateTime.Now - cur.Since;
             double f, low; x.Fps = x.FpsLow = -1;
             if (cur != null && fps.Running && fps.Read(cur.Pids, out f, out low)) { x.Fps = f; x.FpsLow = low; }
+            x.ServerLabel = null; x.UpKbps = x.DownKbps = -1;
+            if (cur != null && net.Running)
+            {
+                var fd = net.Finder; fd.Tick(DateTime.UtcNow.ToFileTimeUtc());
+                var srv = fd.Server; serverPing.Set(srv);
+                x.UpKbps = fd.UpKbps; x.DownKbps = fd.DownKbps;
+                if (srv != null)
+                {
+                    var info = ServerNames.Get(srv);
+                    x.ServerLabel = info.Code ?? (S.HideServerIp ? "Server" : srv.ToString());
+                    x.ServerMs = serverPing.Ms; x.ServerApprox = serverPing.Approx; x.ServerLoss = serverPing.LossPct; x.Stalls = fd.Stalls;
+                }
+                if (fd.Changes != netChanges) { netChanges = fd.Changes; if (S.LookFor(game).Server && msg == null) { ShowMessage("Server changed", false); return; } }
+            }
             bool off = IsOff(game);
             bool want = shown && !off && (!S.OnlyInGame || cur != null);
             if (msg != null && DateTime.Now >= msgUntil) msg = null;
@@ -320,7 +359,7 @@ namespace HallowOverlay
                 preview.HorizontalAlignment = pl.Corner.EndsWith("r") ? HorizontalAlignment.Right : HorizontalAlignment.Left;
                 preview.VerticalAlignment = pl.Corner.StartsWith("b") ? VerticalAlignment.Bottom : VerticalAlignment.Top;
                 preview.Child = Fit(Panel.Build(pl, px, editGame ?? game ?? "Delta Force", session ?? TimeSpan.FromMinutes(42)));
-                foot.Text = FootText();
+                foot.Text = FootText(); serverInfo.Text = ServerText(cur != null);
                 state.Text = exclusiveGame != null && exclusiveGame == game ? ExclusiveNote(game) :
                     !shown ? "Hidden - press Ctrl+Shift+O (or use the tray menu) to show it again." :
                     off ? "Turned off for " + game + " (in Hallow Hub's game settings)." :
@@ -390,6 +429,13 @@ namespace HallowOverlay
             num("Ping", "ms", () => S.HighPing, v => S.HighPing = v, 10, 1000);
             num("RAM", "% used", () => S.RamFull, v => S.RamFull = v, 30, 99);
             lim.Children.Add(lp); sp.Children.Add(lim);
+            // the game's server (global)
+            sp.Children.Add(new TextBlock { Text = "Game server", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 14, 0, 4) });
+            serverInfo = new TextBlock { Text = ServerText(false), TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 6) };
+            sp.Children.Add(serverInfo);
+            var hide = new CheckBox { Content = "Hide the server's IP address (for streaming) - only its region is shown", IsChecked = S.HideServerIp, Style = (Style)FindResource("Switch") };
+            hide.Click += (s, e) => { S.HideServerIp = hide.IsChecked == true; S.Save(); Refresh(); };
+            sp.Children.Add(hide);
             var more = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
             Action<string, bool, Action<bool>> sw2 = (text, on, set) =>
             {
@@ -462,12 +508,32 @@ namespace HallowOverlay
             sw("MIC MUTED warning", T.MicWarn, v => T.MicWarn = v); sw("CPU", T.Cpu, v => T.Cpu = v); sw("GPU load", T.Gpu, v => T.Gpu = v);
             sw("GPU temperature", T.GpuTemp, v => T.GpuTemp = v); sw("RAM", T.Ram, v => T.Ram = v); sw("Ping", T.Ping, v => T.Ping = v);
             sw("Session time", T.Session, v => T.Session = v); sw("Clock", T.Clock, v => T.Clock = v); sw("Game name", T.Game, v => T.Game = v);
-            sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v); sw("Now playing (Mixer)", T.NowPlaying, v => T.NowPlaying = v);
+            sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v); sw("Now playing (Mixer)", T.NowPlaying, v => T.NowPlaying = v); sw("Game server", T.Server, v => T.Server = v); sw("Game traffic (up / down)", T.Traffic, v => T.Traffic = v);
             lookHost.Children.Add(grid);
             var bad = new CheckBox { Content = new TextBlock { Text = "Only when something's wrong: a stat shows up only while it's in trouble (hot GPU, high ping or packet loss, RAM almost full, low FPS, busy CPU)", TextWrapping = TextWrapping.Wrap },
                 IsChecked = T.OnlyBad, Style = (Style)FindResource("Switch"), Margin = new Thickness(0, 8, 0, 0) };
             bad.Click += (s, e) => { T.OnlyBad = bad.IsChecked == true; S.Save(); Refresh(); };
             lookHost.Children.Add(bad);
+        }
+
+        // What the settings window says about the game's server.
+        string ServerText(bool inGame)
+        {
+            const string relay = " Games that send their traffic through a relay network (Valve's SDR in Counter-Strike 2 or Deadlock, for example) show the relay, not the game server.";
+            if (net.Denied) return "Windows doesn't let this account read network events (that needs the Performance Log Users group), so the game's server can't be found. The Ping stat goes to 1.1.1.1 (your internet) instead.";
+            var srv = net.Running ? net.Finder.Server : null;
+            if (srv == null) return (inGame && net.Running ? "Looking for the server the game is talking to..." : "Start a game to see the server it's talking to - found from the game's own network traffic, no online lookup.") + relay;
+            return Describe(srv, ServerNames.Get(srv), serverPing.Mode, serverPing.HopsBefore);
+        }
+        string Describe(IPAddress srv, ServerNames.Info info, string mode, int hops)
+        {
+            const string relay = " Games that send their traffic through a relay network (Valve's SDR in Counter-Strike 2 or Deadlock, for example) show the relay, not the game server.";
+            var where = info.City != null ? info.City + " (" + info.Code + ")" : info.Code ?? "Region unknown";
+            if (!S.HideServerIp) where += "  -  " + (info.Host != null ? info.Host + "  -  " : "") + srv;
+            var how = mode == "direct" ? "Ping goes straight to the server." :
+                mode == "hop" ? "The server doesn't answer ping, so the nearest hop that does is pinged instead (shown with ~" + (hops > 0 ? ", " + hops + " hops short of it" : "") + "). Loss is that hop's; \"stalls\" come from the game's own traffic." :
+                mode == "none" ? "Neither the server nor any hop on the way answers ping, so there's no ping number - stalls still come from the game's own traffic." : "Checking whether the server answers ping...";
+            return "Server: " + where + ". " + how + relay;
         }
 
         string FootText()
@@ -498,11 +564,11 @@ namespace HallowOverlay
             tray.MouseClick += (s, e) => { if (e.Button == WF.MouseButtons.Left) ShowFromTray(); };
         }
         public void ShowFromTray() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); Refresh(); }
-        void Quit() { exiting = true; sampler.Stop(); try { fps.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
+        void Quit() { exiting = true; sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
 
         public void SnapAll(string dir)
         {
-            var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97, NowPlaying = "Lo-fi Beats - Rainy Night" };
+            var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97, NowPlaying = "Lo-fi Beats - Rainy Night", ServerLabel = "FRA", ServerMs = 23, ServerApprox = true, ServerLoss = 0, UpKbps = 96, DownKbps = 410 };
             preview.Child = Fit(Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)));
             state.Text = "Waiting for a game - it appears by itself when one starts.";
             Snap.Save(this, System.IO.Path.Combine(dir, "settings.png"), 760, 0);
@@ -512,11 +578,14 @@ namespace HallowOverlay
             Snap.Save(this, System.IO.Path.Combine(dir, "settings-exclusive.png"), 760, 0);
             Action<string, FrameworkElement, double> one = (name, el, width) => Snap.Save(new Window { Background = Brushes.Transparent, Content = el, FontFamily = new FontFamily("Segoe UI") }, System.IO.Path.Combine(dir, name), width, 0);
             one("flash.png", Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42), "Clip saved", false, false), 760);
+            serverInfo.Text = Describe(IPAddress.Parse("203.0.113.7"), new ServerNames.Info { Code = "FRA", City = "Frankfurt", Host = "fra1-gs7.example.net" }, "hop", 2);
+            Snap.Save(this, System.IO.Path.Combine(dir, "settings-server.png"), 760, 0);
             one("remind-only.png", Panel.Build(S, x, null, null, "Time for a break - you've played 2 hours", true, true), 760);
             // 1.3: loss and jitter, only-when-wrong, a game's own look in the settings
             var y = x.Copy(); y.LossPct = 3.3; y.JitterMs = 12; y.PingMs = 96; y.GpuTemp = 84; y.MicMuted = false;
             one("loss-jitter.png", Panel.Build(S, y, "Delta Force", TimeSpan.FromMinutes(42)), 900);
             var b = S.LookCopy(); b.OnlyBad = true;
+            var tl = S.LookCopy(); tl.Traffic = true; var ty = y.Copy(); ty.Stalls = 2; one("traffic.png", Panel.Build(tl, ty, "Delta Force", null), 1100);
             one("only-bad.png", Panel.Build(b, y, "Delta Force", TimeSpan.FromMinutes(42)), 900);
             S.PerGame["Delta Force"] = S.LookCopy(); S.PerGame["Delta Force"].Corner = "br"; S.PerGame["Delta Force"].Row = false; S.PerGame["Delta Force"].Clock = false;
             games = new List<Game> { new Game { Id = "1", Name = "Delta Force" }, new Game { Id = "2", Name = "Deadlock" } };

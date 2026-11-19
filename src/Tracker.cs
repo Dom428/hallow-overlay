@@ -27,6 +27,25 @@ namespace HallowOverlay
             finally { CloseHandle(h); }
         }
 
+        [DllImport("kernel32.dll")] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint pid);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool Process32FirstW(IntPtr snap, ref PROCESSENTRY32 e);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool Process32NextW(IntPtr snap, ref PROCESSENTRY32 e);
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct PROCESSENTRY32 { public uint dwSize, cntUsage, th32ProcessID; public IntPtr th32DefaultHeapID; public uint th32ModuleID, cntThreads, th32ParentProcessID; public int pcPriClassBase; public uint dwFlags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile; }
+        // process id -> parent process id (a snapshot; opens no process)
+        static Dictionary<int, int> Parents()
+        {
+            var d = new Dictionary<int, int>();
+            var snap = CreateToolhelp32Snapshot(2, 0); if (snap == IntPtr.Zero || snap == new IntPtr(-1)) return d;
+            try
+            {
+                var e = new PROCESSENTRY32 { dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32)) };
+                for (bool ok = Process32FirstW(snap, ref e); ok; ok = Process32NextW(snap, ref e)) d[(int)e.th32ProcessID] = (int)e.th32ParentProcessID;
+            }
+            finally { CloseHandle(snap); }
+            return d;
+        }
+
         public class Running { public Game Game; public DateTime Since; public DateTime LastCount; public int Missed; public string Process; public HashSet<int> Pids = new HashSet<int>(); }
         public readonly Dictionary<string, Running> Now = new Dictionary<string, Running>();
         public Action<Game> Started; public Action<Game, DateTime> Stopped;   // Stopped gets when the session began
@@ -52,6 +71,17 @@ namespace HallowOverlay
                 }
                 catch { }
                 finally { p.Dispose(); }
+            }
+            // plus processes the game started (launchers, helpers outside its folder)
+            if (pids.Count > 0)
+            {
+                var parents = Parents();
+                foreach (var set in pids.Values)
+                    for (bool more = true; more; )
+                    {
+                        more = false;
+                        foreach (var kv in parents) if (!set.Contains(kv.Key) && set.Contains(kv.Value) && kv.Key > 4) { set.Add(kv.Key); more = true; }
+                    }
             }
             var now = DateTime.Now;
             foreach (var id in seen.Keys)

@@ -32,6 +32,8 @@ namespace HallowOverlay
         [DataMember] public bool OnlyBad = false;        // only show a stat when it's in trouble
         [DataMember] public bool LossJitter = true;      // packet loss and jitter next to ping
         [DataMember] public bool NowPlaying = true;      // the song / video playing (from Hallow Mixer)
+        [DataMember] public bool Server = true, Traffic = false;   // the game's server (region, ping, loss, stalls); the game's up / down traffic
+        [DataMember] public bool HideServerIp = true;    // show the region, never the server's IP (for streaming)
         [DataMember] public double HotGpu = 80, HighPing = 80, RamFull = 85;   // "in trouble" from: GPU °C, ping ms, RAM % used
         // Games with their own corner, size and stats (by game name). Everything above "PingHost" is the look; the rest is global.
         [DataMember(EmitDefaultValue = false)] public Dictionary<string, OverlaySettings> PerGame = new Dictionary<string, OverlaySettings>();
@@ -39,7 +41,7 @@ namespace HallowOverlay
         {
             Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; TrayOnClose = true;
             OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
-            OnlyBad = false; LossJitter = true; NowPlaying = true; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
+            OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
         }
         [OnDeserialized] void Fix(StreamingContext c) { if (OffGames == null) OffGames = new List<string>(); }
 
@@ -77,6 +79,7 @@ namespace HallowOverlay
     {
         public double Cpu = -1, RamUsedGB = -1, RamTotalGB = -1, Gpu = -1, GpuTemp = -1, PingMs = -1, Fps = -1, FpsLow = -1, LossPct = -1, JitterMs = -1;
         public bool MicMuted, MixerOn;
+        public string ServerLabel; public double ServerMs = -1, ServerLoss = -1, UpKbps = -1, DownKbps = -1; public bool ServerApprox; public int Stalls;   // the game's server (from NetMonitor)
         public string NowPlaying;   // "Artist - Title" while something plays (Hallow Mixer), else null
         public Sample Copy() { return (Sample)MemberwiseClone(); }
     }

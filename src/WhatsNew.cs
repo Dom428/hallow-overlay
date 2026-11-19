@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.5", new[] { "Game server: the server your game is talking to, its region, ping, loss and stalls (Show > Game server)", "\"Server changed\" when the game moves you, and the game's up / down traffic" }),
             Tuple.Create("1.4", new[] { "Now playing from Hallow Mixer, and MIC MUTED shows up the moment you mute (Mixer 3.14 or newer)", "\"Clip saved\" from Hallow Clips and Hallow Hub's break reminder / daily limit show up here, not as a pop-up" }),
             Tuple.Create("1.3", new[] { "Settings for: give a game its own corner, size and stats", "Only when something's wrong: stats show up only while they're in trouble (you set the limits)", "Packet loss and jitter next to ping" }),
             Tuple.Create("1.2", new[] { "FPS and 1% lows for the game you're playing, read from Windows' own frame events (like PresentMon) - no admin prompt" }),
