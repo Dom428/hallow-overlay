@@ -5,6 +5,10 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.12
+- Benchmark: Ctrl+Shift+F9 starts and stops it - average FPS, 1% and 0.1% lows, frame-time percentiles and a chart (PNG + CSV).
+- Optional CSV log of every stat while you play.
+
 WHAT'S NEW IN 1.11
 - Updates itself: once a day it looks for a new version and asks before installing.
 - FPS for Vulkan and OpenGL games too, and an optional 0.1% low.
@@ -64,6 +68,8 @@ WHAT IT SHOWS
 - Only when something's wrong: stats show up only while they're in trouble (GPU hot, ping high, RAM almost full)
 - Packet loss and jitter next to ping
 - Ctrl+Shift+O shows or hides it
+- Ctrl+Shift+F9 starts and stops a benchmark: average FPS, 1% and 0.1% lows and a frame-time chart, saved in Documents\Hallow Overlay\Benchmarks
+- Optional: a CSV log of every stat while you play (Documents\Hallow Overlay\Logs)
 - With Hallow Hub running, Overlay's menu is in Hub's one Hallow icon (turn off "Use the Hallow icon" to keep Overlay's own)
 
 GOOD TO KNOW

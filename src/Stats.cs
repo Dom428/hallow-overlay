@@ -36,7 +36,8 @@ namespace HallowOverlay
         [DataMember] public bool FrameGraph = false; [DataMember] public string GraphSize = "m";   // frame-time graph: s, m, l
         [DataMember] public bool Server = true, Traffic = false;   // the game's server (region, ping, loss, stalls); the game's up / down traffic
         [DataMember] public bool AutoUpdate = true; [DataMember] public string LastUpdateCheck = "", ToldUpdate = "";   // look for updates once a day (always asks first)
-        [DataMember] public bool Fps01 = false;          // 0.1% low next to FPS
+        [DataMember] public bool Fps01 = false;
+        [DataMember] public bool LogCsv = false;         // every stat once a second to Documents\Hallow Overlay\Logs while a game runs          // 0.1% low next to FPS
         [DataMember] public bool UseHallowAccent = true; // the accent colour picked in Hallow Toolkit
         [DataMember] public string LastCrashShown = ""; // the crash report the notice was shown for
         [DataMember] public bool UseHallowIcon = true;   // let Hallow Hub show one tray icon for all Hallow apps
@@ -48,7 +49,7 @@ namespace HallowOverlay
         {
             Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; TrayOnClose = true;
             OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
-            GpuClocks = GpuPower = Vram = FrameGraph = false; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; LastCrashShown = ""; AutoUpdate = true; LastUpdateCheck = ""; ToldUpdate = ""; Fps01 = false; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
+            GpuClocks = GpuPower = Vram = FrameGraph = false; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; LastCrashShown = ""; AutoUpdate = true; LastUpdateCheck = ""; ToldUpdate = ""; Fps01 = false; LogCsv = false; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
         }
         [OnDeserialized] void Fix(StreamingContext c) { if (OffGames == null) OffGames = new List<string>(); }
 
@@ -86,6 +87,7 @@ namespace HallowOverlay
     {
         public double Cpu = -1, RamUsedGB = -1, RamTotalGB = -1, Gpu = -1, GpuTemp = -1, PingMs = -1, Fps = -1, FpsLow = -1, FpsLow01 = -1, LossPct = -1, JitterMs = -1;
         public bool MicMuted, MixerOn;
+        public double BenchSeconds = -1;   // a benchmark is running (seconds so far)
         public double GpuClock = -1, MemClock = -1, PowerW = -1, PowerLimitW = -1, VramUsedMB = -1, VramTotalMB = -1;   // NVIDIA
         public double[] FrameMs; public int FrameCount;   // the last few seconds of frame times (for the graph), oldest first
         public string ServerLabel; public double ServerMs = -1, ServerLoss = -1, UpKbps = -1, DownKbps = -1; public bool ServerApprox; public int Stalls;   // the game's server (from NetMonitor)

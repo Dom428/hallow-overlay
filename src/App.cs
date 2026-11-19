@@ -21,14 +21,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.11.0.0")]
-[assembly: AssemblyFileVersion("1.11.0.0")]
+[assembly: AssemblyVersion("1.12.0.0")]
+[assembly: AssemblyFileVersion("1.12.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.11";
+        public const string Version = "1.12";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -127,6 +127,7 @@ namespace HallowOverlay
                 items.Add(sp);
             };
             if (s.Game && game != null && !bad) item("gamepad", game, 0);
+            if (x.BenchSeconds >= 0) item("chart-line", "BENCHMARK " + ((int)x.BenchSeconds / 60) + ":" + ((int)x.BenchSeconds % 60).ToString("00"), 1);
             if (s.Session && session != null && !bad) item("stopwatch", session.Value.TotalHours >= 1 ? ((int)session.Value.TotalHours + ":" + session.Value.Minutes.ToString("00")) : session.Value.Minutes + " min", 0);
             if (s.Fps && x.Fps >= 0) item("gauge-high", x.Fps.ToString("0") + " FPS" + (x.FpsLow >= 0 ? "  1% " + x.FpsLow.ToString("0") : "") + (s.Fps01 && x.FpsLow01 >= 0 ? "  0.1% " + x.FpsLow01.ToString("0") : ""), x.Fps < 30 ? 2 : x.Fps < 50 ? 1 : 0);
             if (s.FrameGraph && x.FrameMs != null && x.FrameCount >= 10)
@@ -236,7 +237,7 @@ namespace HallowOverlay
         bool shown = true, exiting, toldTray; readonly bool startHidden;
         Border preview; TextBlock state; WF.NotifyIcon tray; WF.ToolStripMenuItem trayShow;
         DispatcherTimer tick, poll, msgTimer; readonly HubIcon hub = new HubIcon(); WF.ToolStripMenuItem trayBad;
-        string msg; bool msgStrong; DateTime msgUntil;            // flash / remind from another Hallow app
+        string msg, lastMessage; bool msgStrong; DateTime msgUntil;            // flash / remind from another Hallow app
         string lastStatus;                                       // what status.json says now (without the time)
         string exclusiveGame; readonly HashSet<string> toldExclusive = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         [DllImport("shell32.dll")] static extern int SHQueryUserNotificationState(out int state);
@@ -266,8 +267,8 @@ namespace HallowOverlay
             SetupTray();
             // hotkey: Ctrl+Shift+O on this window's handle (it exists even while the window is hidden)
             var hwnd = new WindowInteropHelper(this).EnsureHandle();
-            if (S.Hotkey) RegisterHotKey(hwnd, 1, 0x4006, 0x4F);   // MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'O'
-            HwndSource.FromHwnd(hwnd).AddHook((IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) => { if (msg == 0x0312 && wp.ToInt32() == 1) { Toggle(); handled = true; } return IntPtr.Zero; });
+            if (S.Hotkey) { RegisterHotKey(hwnd, 1, 0x4006, 0x4F); RegisterHotKey(hwnd, 2, 0x4006, 0x78); }   // MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT: 'O', F9 (benchmark)
+            HwndSource.FromHwnd(hwnd).AddHook((IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) => { if (msg == 0x0312 && wp.ToInt32() == 1) { Toggle(); handled = true; } if (msg == 0x0312 && wp.ToInt32() == 2) { ToggleBench(); handled = true; } return IntPtr.Zero; });
             tick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) }; tick.Tick += (s, e) => Refresh(); tick.Start();
             poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) }; poll.Tick += (s, e) => { try { tracker.Poll(games.Concat(games.SelectMany(g => g.Alts)).ToList()); } catch { } CheckExclusive(); RunFps(); RunNet(); }; poll.Start();
             var rescan = new DispatcherTimer { Interval = TimeSpan.FromMinutes(10) }; rescan.Tick += (s, e) => { try { games = Library.Scan(new List<Game>()); } catch { } AddTestGame(); }; rescan.Start();
@@ -358,6 +359,33 @@ namespace HallowOverlay
             });
         }
 
+        // ---- benchmark (Ctrl+Shift+F9): every frame between start and stop, then a report
+        bool benchOn; DateTime benchStart; string benchGame; HashSet<int> benchPids; string lastBench;
+        readonly StatLog statLog = new StatLog();
+        void ToggleBench() { if (benchOn) StopBench(); else StartBench(); }
+        void StartBench()
+        {
+            var cur = Current;
+            if (cur == null) { ShowMessage("Start a game first - the benchmark measures its frames", false, 4); return; }
+            if (!fps.Running && !fps.Start()) { ShowMessage(fps.Denied ? "Benchmarks need FPS, which Windows doesn't allow on this account" : "Couldn't start the frame counter", false, 5); return; }
+            fps.BeginRecording(); benchOn = true; benchStart = DateTime.Now; benchGame = (cur.Game.Parent ?? cur.Game).Name; benchPids = new HashSet<int>(cur.Pids);
+            ShowMessage("Benchmark started - Ctrl+Shift+F9 stops it", false, 3);
+        }
+        void StopBench()
+        {
+            if (!benchOn) return; benchOn = false;
+            var cur = Current; if (cur != null) foreach (var p in cur.Pids) benchPids.Add(p);
+            string src; var ms = fps.EndRecording(benchPids, out src);
+            var rep = BenchReport.Make(ms, benchGame, benchStart, src);
+            if (rep == null) { ShowMessage("Benchmark too short - let it run a few seconds", false, 4); return; }
+            try { lastBench = rep.SavePng(BenchReport.Folder); rep.SaveCsv(BenchReport.Folder); }
+            catch (Exception e) { ShowMessage("Couldn't save the benchmark: " + e.Message, false, 5); return; }
+            Dispatcher.BeginInvoke(new Action(() => ShowMessage(rep.Summary(), false, 8)));
+            Balloon("Benchmark saved", rep.Summary() + ". Open it from Overlay's settings (Last benchmark).", 6000);
+        }
+        static void OpenFolder(string f) { try { System.IO.Directory.CreateDirectory(f); System.Diagnostics.Process.Start("explorer.exe", "\"" + f + "\""); } catch { } }
+        static void OpenFile(string f) { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(f) { UseShellExecute = true }); } catch { } }
+
         void ShowWhatsNew()
         {
             if (S.LastSeenVersion == Program.Version || !IsVisible || Snap.On) return;
@@ -404,6 +432,7 @@ namespace HallowOverlay
             var l = new List<Dictionary<string, object>>();
             l.Add(new Dictionary<string, object> { { "id", "toggle" }, { "label", "Show the overlay" }, { "checked", shown } });
             l.Add(new Dictionary<string, object> { { "id", "only-bad" }, { "label", "Only when something's wrong" }, { "checked", CurrentLook.OnlyBad } });
+            l.Add(new Dictionary<string, object> { { "id", "bench" }, { "label", benchOn ? "Stop benchmark" : "Start benchmark" } });
             l.Add(new Dictionary<string, object> { { "id", "history" }, { "label", "Match history" } });
             l.Add(new Dictionary<string, object> { { "id", "-" } });
             l.Add(new Dictionary<string, object> { { "id", "settings" }, { "label", "Settings" } });
@@ -417,6 +446,7 @@ namespace HallowOverlay
                 case "only-bad": ToggleOnlyBad(); return "ok";
                 case "settings": ShowFromTray(); return "ok";
                 case "history": ShowHistory(); return "ok";
+                case "bench": ToggleBench(); return "ok";
                 default: return "error unknown item";
             }
         }
@@ -431,6 +461,7 @@ namespace HallowOverlay
         void Balloon(string title, string text, int ms)
         {
             if (tray == null) return;
+            if (testMode) { lastMessage = title + ": " + text; return; }
             if (!hub.Hosted) { tray.ShowBalloonTip(ms, title, text, WF.ToolTipIcon.None); return; }
             ThreadPool.QueueUserWorkItem(_ =>
             {
@@ -459,8 +490,10 @@ namespace HallowOverlay
         }
 
         public void ShowMessage(string text, bool strong) { ShowMessage(text, strong, strong ? 8 : 2.5); }
+        static readonly bool testMode = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("HALLOW_OVERLAY_TESTGAME"));   // developer tests: nothing on screen
         public void ShowMessage(string text, bool strong, double seconds)
         {
+            if (testMode) { lastMessage = text; return; }
             msg = text; msgStrong = strong; msgUntil = DateTime.Now.AddSeconds(seconds);
             msgTimer.Stop(); msgTimer.Interval = msgUntil - DateTime.Now; msgTimer.Start();
             Refresh();
@@ -469,7 +502,8 @@ namespace HallowOverlay
         {
             var d = new Dictionary<string, object> { { "app", "Overlay" }, { "version", Program.Version }, { "updated", DateTime.Now.ToString("s") },
                 { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted }, { "matches", matches.Take(5).Select(m => m.Short()).ToArray() }, { "lastCrash", LastCrashIso() } };
-            if (live != null) d["live"] = live;   // Hallow Remote's Live stats tab
+            if (live != null) d["live"] = live;
+            if (testMode) d["testMessage"] = lastMessage;   // Hallow Remote's Live stats tab
             return Link.Json(d);
         }
         static string LastCrashIso() { var l = Crash.Last(); return l == null ? null : l.Value.ToString("s"); }
@@ -506,7 +540,7 @@ namespace HallowOverlay
         }
         void RunFps()
         {
-            var cl = CurrentLook; bool want = (cl.Fps || cl.FrameGraph) && Current != null;
+            var cl = CurrentLook; bool want = ((cl.Fps || cl.FrameGraph) && Current != null) || benchOn;
             if (want && !fps.Running && !fps.Denied && DateTime.Now >= fpsRetry) { if (!fps.Start()) fpsRetry = DateTime.Now.AddMinutes(1); }
             else if (!want && fps.Running) fps.Stop();
         }
@@ -548,11 +582,14 @@ namespace HallowOverlay
             var recNow = cur == null ? null : game + "|" + cur.Since.Ticks;
             if (recNow != recKey)
             {
+                if (benchOn) StopBench();   // the game closed: the benchmark ends with it
                 recKey = recNow; var done = rec.End();
                 if (cur != null) rec.Begin(game, cur.Since);
                 if (done != null) MatchDone(done);
             }
             if (cur != null) rec.Add(x, srvRegion, srvIp, net.Running ? net.Finder.TotalStalls : -1, DateTime.Now);
+            if (benchOn) x.BenchSeconds = (DateTime.Now - benchStart).TotalSeconds;
+            if (S.LogCsv && cur != null) statLog.Write(game, recNow, x, srvRegion ?? (S.HideServerIp ? null : srvIp), DateTime.Now); else statLog.Close();
             bool off = IsOff(game);
             bool want = shown && !off && (!S.OnlyInGame || cur != null);
             if (msg != null && DateTime.Now >= msgUntil) msg = null;
@@ -675,8 +712,13 @@ namespace HallowOverlay
             updateBtn.Click += (s, e) => InstallUpdate(); ur.Children.Add(updateBtn);
             updateText = new TextBlock { TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) }; ur.Children.Add(updateText);
             updateRow.Child = ur; sp.Children.Add(updateRow); ShowUpdate();
-            var hb = new Button { Content = "Match history", Style = (Style)FindResource("Btn"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 14, 0, 0) };
-            hb.Click += (s, e) => ShowHistory(); sp.Children.Add(hb);
+            var tools = new WrapPanel { Margin = new Thickness(0, 14, 0, 0) };
+            Action<string, Action> tool = (label, act) => { var b = new Button { Content = label, Style = (Style)FindResource("Btn"), Margin = new Thickness(0, 0, 8, 6) }; b.Click += (s, e) => act(); tools.Children.Add(b); };
+            tool("Match history", ShowHistory);
+            tool("Benchmarks", () => OpenFolder(BenchReport.Folder)); tool("Last benchmark", () => { if (lastBench != null && System.IO.File.Exists(lastBench)) OpenFile(lastBench); else OpenFolder(BenchReport.Folder); });
+            tool("Logs", () => OpenFolder(StatLog.Folder));
+            sp.Children.Add(tools);
+            sp.Children.Add(new TextBlock { Text = "Benchmark: Ctrl+Shift+F9 starts it while you play and stops it - you get average FPS, 1% and 0.1% lows, frame-time percentiles and a chart (PNG + CSV in Documents\\Hallow Overlay\\Benchmarks).", Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) });
             var more = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
             Action<string, bool, Action<bool>> sw2 = (text, on, set) =>
             {
@@ -685,6 +727,7 @@ namespace HallowOverlay
             };
             sw2("Only while a game is running (Steam, Battle.net, Epic, EA, Ubisoft, GOG, Riot, Xbox)", S.OnlyInGame, v => S.OnlyInGame = v);
             sw2("Keep running in the tray when I close this window", S.TrayOnClose, v => S.TrayOnClose = v);
+            sw2("Log every stat to a CSV file once a second while you play (Documents\\Hallow Overlay\\Logs)", S.LogCsv, v => S.LogCsv = v);
             sw2("Look for updates once a day (it always asks before installing)", S.AutoUpdate, v => S.AutoUpdate = v);
             sw2("Use the Hallow accent: the colour picked in Hallow Toolkit (warnings stay red and amber)", S.UseHallowAccent, v => { S.UseHallowAccent = v; Dispatcher.BeginInvoke(new Action(ApplyAccent)); });
             sw2("Use the Hallow icon: when Hallow Hub is running, its one tray icon has Overlay's menu (Overlay's own icon hides)", S.UseHallowIcon, v => { S.UseHallowIcon = v; hub.CheckNow(); });
@@ -811,6 +854,8 @@ namespace HallowOverlay
             trayShow = new WF.ToolStripMenuItem("Show the overlay   (Ctrl+Shift+O)") { Checked = true }; trayShow.Click += (s, e) => Dispatcher.BeginInvoke(new Action(Toggle)); menu.Items.Add(trayShow);
             trayBad = new WF.ToolStripMenuItem("Only when something's wrong"); trayBad.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ToggleOnlyBad)); menu.Items.Add(trayBad);
             menu.Opening += (s, e) => { trayBad.Checked = CurrentLook.OnlyBad; };
+            var bench = new WF.ToolStripMenuItem("Start benchmark   (Ctrl+Shift+F9)"); bench.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ToggleBench)); menu.Items.Add(bench);
+            menu.Opening += (s, e) => { bench.Text = (benchOn ? "Stop" : "Start") + " benchmark   (Ctrl+Shift+F9)"; };
             var hist = new WF.ToolStripMenuItem("Match history"); hist.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ShowHistory)); menu.Items.Add(hist);
             menu.Items.Add(new WF.ToolStripSeparator());
             var quit = new WF.ToolStripMenuItem("Quit"); quit.Click += (s, e) => Quit(); menu.Items.Add(quit);
@@ -821,7 +866,7 @@ namespace HallowOverlay
             hub.Start();
         }
         public void ShowFromTray() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); Refresh(); }
-        void Quit() { exiting = true; hub.Stop(); try { var m = rec.End(); if (m != null) MatchStore.Add(matches, m); } catch { } sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
+        void Quit() { exiting = true; hub.Stop(); try { if (benchOn) StopBench(); statLog.Close(); } catch { } try { var m = rec.End(); if (m != null) MatchStore.Add(matches, m); } catch { } sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
 
         public void SnapAll(string dir)
         {
@@ -877,6 +922,8 @@ namespace HallowOverlay
             hw.Pick(1, false); Snap.Save(hw, System.IO.Path.Combine(dir, "history-2.png"), 900, 620);
             hw.Pick(0, true); Snap.Save(hw, System.IO.Path.Combine(dir, "history-servers.png"), 900, 620);
             Snap.Save(new MatchHistoryWindow(new List<GameMatch>(), true), System.IO.Path.Combine(dir, "history-empty.png"), 900, 300);
+            { var ff = FakeFrames().ToList(); for (int i = 0; i < 6; i++) ff.AddRange(FakeFrames()); var br = BenchReport.Make(ff, "Delta Force", new DateTime(2026, 11, 19, 21, 4, 0), "DirectX"); br.SavePng(dir); br.SaveCsv(dir);
+              var bx = x.Copy(); bx.BenchSeconds = 42; bx.MicMuted = false; one("bench-panel.png", Panel.Build(S, bx, "Delta Force", null), 1000); one("bench-flash.png", Panel.Build(S, x, null, null, br.Summary(), false, true), 760); }
             Snap.Save(new CrashNotice(System.IO.Path.Combine(Crash.Dir, "2026-11-19 20-14-03.txt")), System.IO.Path.Combine(dir, "crash-notice.png"), 470, 0);
             S.Row = false; x.MicMuted = false;
             var w2 = new Window { Background = Brushes.Transparent, Content = Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)), FontFamily = new FontFamily("Segoe UI") };
