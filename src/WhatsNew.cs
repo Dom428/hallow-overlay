@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.7", new[] { "Match summary: when a game closes, a one-line summary shows on the panel (FPS, ping, stalls)", "Match history (settings or the tray menu): every session with its details, and a Servers view of the regions you got" }),
             Tuple.Create("1.6", new[] { "One Hallow icon: with Hallow Hub running, Overlay's menu lives in Hub's tray icon and Overlay's own icon hides (Settings > Use the Hallow icon)" }),
             Tuple.Create("1.5", new[] { "Game server: the server your game is talking to, its region, ping, loss and stalls (Show > Game server)", "\"Server changed\" when the game moves you, and the game's up / down traffic" }),
             Tuple.Create("1.4", new[] { "Now playing from Hallow Mixer, and MIC MUTED shows up the moment you mute (Mixer 3.14 or newer)", "\"Clip saved\" from Hallow Clips and Hallow Hub's break reminder / daily limit show up here, not as a pop-up" }),

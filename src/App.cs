@@ -21,14 +21,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.6.0.0")]
-[assembly: AssemblyFileVersion("1.6.0.0")]
+[assembly: AssemblyVersion("1.7.0.0")]
+[assembly: AssemblyFileVersion("1.7.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.6";
+        public const string Version = "1.7";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -274,6 +274,7 @@ namespace HallowOverlay
             var l = new List<Dictionary<string, object>>();
             l.Add(new Dictionary<string, object> { { "id", "toggle" }, { "label", "Show the overlay" }, { "checked", shown } });
             l.Add(new Dictionary<string, object> { { "id", "only-bad" }, { "label", "Only when something's wrong" }, { "checked", CurrentLook.OnlyBad } });
+            l.Add(new Dictionary<string, object> { { "id", "history" }, { "label", "Match history" } });
             l.Add(new Dictionary<string, object> { { "id", "-" } });
             l.Add(new Dictionary<string, object> { { "id", "settings" }, { "label", "Settings" } });
             return l;
@@ -285,6 +286,7 @@ namespace HallowOverlay
                 case "toggle": Toggle(); return "ok";
                 case "only-bad": ToggleOnlyBad(); return "ok";
                 case "settings": ShowFromTray(); return "ok";
+                case "history": ShowHistory(); return "ok";
                 default: return "error unknown item";
             }
         }
@@ -312,20 +314,35 @@ namespace HallowOverlay
             });
         }
 
-        public void ShowMessage(string text, bool strong)
+        // ---- match summaries
+        readonly List<GameMatch> matches = MatchStore.Load(); readonly MatchRecorder rec = new MatchRecorder(); string recKey; MatchHistoryWindow histWin;
+        void MatchDone(GameMatch m)
         {
-            msg = text; msgStrong = strong; msgUntil = DateTime.Now.AddSeconds(strong ? 8 : 2.5);
+            MatchStore.Add(matches, m); WriteStatus(true);
+            Dispatcher.BeginInvoke(new Action(() => ShowMessage(m.Summary(), false, 6)));
+        }
+        void ShowHistory()
+        {
+            if (histWin != null && histWin.IsLoaded) { histWin.Activate(); return; }
+            histWin = new MatchHistoryWindow(matches, S.HideServerIp); try { histWin.Icon = Icon; } catch { }
+            histWin.Show();
+        }
+
+        public void ShowMessage(string text, bool strong) { ShowMessage(text, strong, strong ? 8 : 2.5); }
+        public void ShowMessage(string text, bool strong, double seconds)
+        {
+            msg = text; msgStrong = strong; msgUntil = DateTime.Now.AddSeconds(seconds);
             msgTimer.Stop(); msgTimer.Interval = msgUntil - DateTime.Now; msgTimer.Start();
             Refresh();
         }
         string StatusJson()
         {
             return Link.Json(new Dictionary<string, object> { { "app", "Overlay" }, { "version", Program.Version }, { "updated", DateTime.Now.ToString("s") },
-                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted } });
+                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted }, { "matches", matches.Take(5).Select(m => m.Short()).ToArray() } });
         }
         void WriteStatus(bool force)
         {
-            var now = ov.IsVisible + "|" + hub.Hosted + "|" + string.Join("|", S.OffGames);
+            var now = ov.IsVisible + "|" + hub.Hosted + "|" + matches.Count + "|" + string.Join("|", S.OffGames);
             if (!force && now == lastStatus) return;
             lastStatus = now; Link.WriteStatus(StatusJson());
         }
@@ -378,7 +395,7 @@ namespace HallowOverlay
             TimeSpan? session = cur == null ? (TimeSpan?)null : DateTime.Now - cur.Since;
             double f, low; x.Fps = x.FpsLow = -1;
             if (cur != null && fps.Running && fps.Read(cur.Pids, out f, out low)) { x.Fps = f; x.FpsLow = low; }
-            x.ServerLabel = null; x.UpKbps = x.DownKbps = -1;
+            x.ServerLabel = null; x.UpKbps = x.DownKbps = -1; x.ServerMs = x.ServerLoss = -1; x.Stalls = 0; string srvRegion = null, srvIp = null;
             if (cur != null && net.Running)
             {
                 var fd = net.Finder; fd.Tick(DateTime.UtcNow.ToFileTimeUtc());
@@ -387,11 +404,20 @@ namespace HallowOverlay
                 if (srv != null)
                 {
                     var info = ServerNames.Get(srv);
-                    x.ServerLabel = info.Code ?? (S.HideServerIp ? "Server" : srv.ToString());
+                    x.ServerLabel = info.Code ?? (S.HideServerIp ? "Server" : srv.ToString()); srvRegion = info.Code; srvIp = srv.ToString();
                     x.ServerMs = serverPing.Ms; x.ServerApprox = serverPing.Approx; x.ServerLoss = serverPing.LossPct; x.Stalls = fd.Stalls;
                 }
                 if (fd.Changes != netChanges) { netChanges = fd.Changes; if (S.LookFor(game).Server && msg == null) { ShowMessage("Server changed", false); return; } }
             }
+            // match summary: one per game session
+            var recNow = cur == null ? null : game + "|" + cur.Since.Ticks;
+            if (recNow != recKey)
+            {
+                recKey = recNow; var done = rec.End();
+                if (cur != null) rec.Begin(game, cur.Since);
+                if (done != null) MatchDone(done);
+            }
+            if (cur != null) rec.Add(x, srvRegion, srvIp, net.Running ? net.Finder.TotalStalls : -1, DateTime.Now);
             bool off = IsOff(game);
             bool want = shown && !off && (!S.OnlyInGame || cur != null);
             if (msg != null && DateTime.Now >= msgUntil) msg = null;
@@ -487,6 +513,8 @@ namespace HallowOverlay
             var hide = new CheckBox { Content = "Hide the server's IP address (for streaming) - only its region is shown", IsChecked = S.HideServerIp, Style = (Style)FindResource("Switch") };
             hide.Click += (s, e) => { S.HideServerIp = hide.IsChecked == true; S.Save(); Refresh(); };
             sp.Children.Add(hide);
+            var hb = new Button { Content = "Match history", Style = (Style)FindResource("Btn"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 14, 0, 0) };
+            hb.Click += (s, e) => ShowHistory(); sp.Children.Add(hb);
             var more = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
             Action<string, bool, Action<bool>> sw2 = (text, on, set) =>
             {
@@ -612,6 +640,7 @@ namespace HallowOverlay
             trayShow = new WF.ToolStripMenuItem("Show the overlay   (Ctrl+Shift+O)") { Checked = true }; trayShow.Click += (s, e) => Dispatcher.BeginInvoke(new Action(Toggle)); menu.Items.Add(trayShow);
             trayBad = new WF.ToolStripMenuItem("Only when something's wrong"); trayBad.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ToggleOnlyBad)); menu.Items.Add(trayBad);
             menu.Opening += (s, e) => { trayBad.Checked = CurrentLook.OnlyBad; };
+            var hist = new WF.ToolStripMenuItem("Match history"); hist.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ShowHistory)); menu.Items.Add(hist);
             menu.Items.Add(new WF.ToolStripSeparator());
             var quit = new WF.ToolStripMenuItem("Quit"); quit.Click += (s, e) => Quit(); menu.Items.Add(quit);
             tray.ContextMenuStrip = menu;
@@ -621,7 +650,7 @@ namespace HallowOverlay
             hub.Start();
         }
         public void ShowFromTray() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); Refresh(); }
-        void Quit() { exiting = true; hub.Stop(); sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
+        void Quit() { exiting = true; hub.Stop(); try { var m = rec.End(); if (m != null) MatchStore.Add(matches, m); } catch { } sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
 
         public void SnapAll(string dir)
         {
@@ -654,6 +683,22 @@ namespace HallowOverlay
             Snap.Save(this, System.IO.Path.Combine(dir, "settings-pergame.png"), 760, 0);
             forBox.SelectedIndex = 2;   // Deadlock: uses the normal look (greyed out)
             Snap.Save(this, System.IO.Path.Combine(dir, "settings-pergame-off.png"), 760, 0);
+            // 1.7: match summary flash and the Match history window
+            var t0 = new DateTime(2026, 11, 18, 20, 5, 0);
+            var fake = new List<GameMatch> {
+                new GameMatch { Game = "Deadlock", Start = t0, End = t0.AddMinutes(42), Minutes = 42, FpsAvg = 141, FpsLow = 88, PingAvg = 23, PingWorst = 61, LossPct = 0.2, Stalls = 0, GpuTempAvg = 71, GpuTempMax = 79, CpuAvg = 38, GpuAvg = 92, RamPeakGB = 17.6,
+                    Servers = new List<ServerUse> { new ServerUse { Region = "FRA", Ip = "203.0.113.7", Seconds = 2400, PingAvg = 23, Stalls = 0 }, new ServerUse { Region = "AMS", Ip = "203.0.113.9", Seconds = 120, PingAvg = 29, Stalls = 0 } } },
+                new GameMatch { Game = "Delta Force", Start = t0.AddDays(-1), End = t0.AddDays(-1).AddMinutes(95), Minutes = 95, FpsAvg = 118, FpsLow = 71, PingAvg = 34, PingWorst = 140, LossPct = 1.4, Stalls = 3, GpuTempAvg = 76, GpuTempMax = 84, CpuAvg = 51, GpuAvg = 97, RamPeakGB = 21.2,
+                    Servers = new List<ServerUse> { new ServerUse { Region = null, Ip = "198.51.100.20", Seconds = 5700, PingAvg = 34, Stalls = 3 } } },
+                new GameMatch { Game = "Deadlock", Start = t0.AddDays(-2), End = t0.AddDays(-2).AddMinutes(31), Minutes = 31, FpsAvg = 152, FpsLow = 95, PingAvg = 27, PingWorst = 48, LossPct = 0, Stalls = 1, GpuTempAvg = 69, GpuTempMax = 75, CpuAvg = 35, GpuAvg = 90, RamPeakGB = 16.9,
+                    Servers = new List<ServerUse> { new ServerUse { Region = "AMS", Ip = "203.0.113.9", Seconds = 1860, PingAvg = 27, Stalls = 1 } } },
+            };
+            one("match-flash.png", Panel.Build(S, x, null, null, fake[0].Summary(), false, true), 760);
+            var hw = new MatchHistoryWindow(fake, true);
+            Snap.Save(hw, System.IO.Path.Combine(dir, "history.png"), 900, 620);
+            hw.Pick(1, false); Snap.Save(hw, System.IO.Path.Combine(dir, "history-2.png"), 900, 620);
+            hw.Pick(0, true); Snap.Save(hw, System.IO.Path.Combine(dir, "history-servers.png"), 900, 620);
+            Snap.Save(new MatchHistoryWindow(new List<GameMatch>(), true), System.IO.Path.Combine(dir, "history-empty.png"), 900, 300);
             S.Row = false; x.MicMuted = false;
             var w2 = new Window { Background = Brushes.Transparent, Content = Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)), FontFamily = new FontFamily("Segoe UI") };
             Snap.Save(w2, System.IO.Path.Combine(dir, "column.png"), 220, 0);

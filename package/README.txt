@@ -5,6 +5,9 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.7
+- Match summary: a one-line summary on the panel when a game closes, and Match history with every session's FPS, ping, stalls, servers and temperatures.
+
 WHAT'S NEW IN 1.6
 - One Hallow icon: with Hallow Hub running, Overlay's menu is in Hub's tray icon and Overlay's own icon hides.
 
@@ -23,7 +26,8 @@ WHAT'S NEW IN 1.3
 
 WHAT'S NEW IN 1.2
 - FPS and 1% lows for the game you're playing (DirectX games)
-- The game's server: its region, ping, loss and stalls (and the game's up / down traffic if you like), from Windows' own frame events - no admin prompt.
+- The game's server: its region, ping, loss and stalls (and the game's up / down traffic if you like)
+- Match history: a summary of every game session (FPS, ping, stalls, servers, temperatures), and a one-line summary on the panel when a game closes, from Windows' own frame events - no admin prompt.
 
 WHAT'S NEW IN 1.1
 - Tells you when a game is in exclusive fullscreen (Windows can't draw over that - switch the game to borderless).
@@ -34,6 +38,7 @@ WHAT IT SHOWS
 - "Clip saved" from Hallow Clips and Hallow Hub's break reminder / daily limit, right on the panel
 - FPS and 1% lows for the game you're playing (DirectX games)
 - The game's server: its region, ping, loss and stalls (and the game's up / down traffic if you like)
+- Match history: a summary of every game session (FPS, ping, stalls, servers, temperatures), and a one-line summary on the panel when a game closes
 - CPU, GPU load and temperature (NVIDIA cards), RAM, ping, session time, the clock
 - Only while a game is running (Steam, Battle.net, Epic, EA, Ubisoft, GOG, Riot, Xbox) - or always
 - Any corner, one line or a column, three sizes, see-through background - and a different one per game if you like

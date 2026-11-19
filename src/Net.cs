@@ -97,7 +97,8 @@ namespace HallowOverlay
         public IPAddress Server { get { lock (gate) return current; } }
         public int Changes { get; private set; }   // goes up each time the server changes from one to another
         public double UpKbps = -1, DownKbps = -1;
-        public int Stalls { get { lock (gate) return stalls.Count; } }
+        public int Stalls { get { lock (gate) return stalls.Count; } }   // in the last minute
+        public int TotalStalls { get; private set; }                     // since this finder was made (match summaries count the difference)
 
         public void Clear() { lock (gate) { recent.Clear(); current = pending = null; stalls.Clear(); UpKbps = DownKbps = -1; } }
 
@@ -163,7 +164,7 @@ namespace HallowOverlay
             for (int i = 1; i < recv.Count; i++)
             {
                 long g0 = recv[i - 1], g1 = recv[i];
-                if (g1 - g0 >= S / 2 && mine.Count(p => p.Send && p.Ts > g0 && p.Ts < g1) >= 2) { stalls.Add(g1); lastStallEnd = g1; }
+                if (g1 - g0 >= S / 2 && mine.Count(p => p.Send && p.Ts > g0 && p.Ts < g1) >= 2) { stalls.Add(g1); lastStallEnd = g1; TotalStalls++; }
             }
         }
     }
@@ -314,6 +315,12 @@ namespace HallowOverlay
             { "ap-south-1", "bom" }, { "ap-east-1", "hkg" }, { "me-south-1", "bah" }, { "af-south-1", "jnb" },
         };
 
+        // "FRA" -> "Frankfurt (FRA)"; anything else as it is
+        public static string Named(string code)
+        {
+            string n; if (code != null && code.Length == 3 && Codes.TryGetValue(code.ToLowerInvariant(), out n)) return n + " (" + code + ")";
+            return code == "CMH" ? "Ohio (CMH)" : code == "PDX" ? "Oregon (PDX)" : code;
+        }
         // "fra1-gs12.example.net" -> "FRA" (city "Frankfurt"); null when nothing is recognized.
         public static string Region(string host, out string city)
         {

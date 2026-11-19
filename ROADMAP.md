@@ -11,13 +11,9 @@
 | **1.4** | "Clip saved" flash from Hallow Clips and Hallow Hub's break reminder / daily limit on the panel (through the 1.1 link); now playing from Hallow Mixer; MIC MUTED at once with Mixer's long poll (3.14+) |
 | **1.5** | The game's server from its own network traffic (Windows' Winsock events, no admin prompt; 1.1.1.1 ping when Windows doesn't allow it): region from its name, ping (or the nearest hop, ~), loss, jitter and stalls; "Server changed"; the game's up / down traffic; IP hidden by default |
 | **1.6** | One Hallow icon: Overlay's menu in Hallow Hub's tray icon (open / menu / invoke / quit over the link), own icon hidden while Hub hosts it and back when Hub is gone; messages through Hub; "Use the Hallow icon" setting |
+| **1.7** | Match summary for every game session (FPS, ping, loss, stalls, servers / regions, temperatures, load, RAM) in matches.json; one-line summary on the panel when the game closes; Match history window with a per-game filter and a Servers view; last 5 in status.json |
 
 ## Next
-
-### 1.7 - Match summary
-- A summary of every game session: length, average FPS and 1% low, ping (average and worst), loss, stalls, the servers / regions you got, GPU temperature, CPU and GPU load, peak RAM
-- A one-line summary on the panel when the game closes, and a Match history window with a per-game filter and a "Servers" view (regions you got, their ping and stalls)
-- The last 5 summaries in status.json for Hallow Hub and Remote
 
 ### Fixes from real use
 - Check it over real games in borderless / windowed mode, and that the exclusive-fullscreen notice shows up for games that really use exclusive fullscreen (needs real games - not testable here)
@@ -25,3 +21,4 @@
 - Check "Clip saved" (Hallow Clips) and the break reminder / daily limit (Hallow Hub) arrive over a real game once those apps send them
 - Check the game server finder in real games (UDP and TCP games, IPv6, relayed games like Valve SDR) - a game socket that connected before the overlay noticed the game can be missed
 - Check the One Hallow icon with the real Hallow Hub 2.4 (menu, Exit, messages from Hub's icon) - tested with a fake Hub only
+- Check match summaries after real games (the summary when a game closes, history entries, servers per region) - tested with made-up samples only
