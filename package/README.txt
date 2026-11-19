@@ -5,6 +5,9 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.6
+- One Hallow icon: with Hallow Hub running, Overlay's menu is in Hub's tray icon and Overlay's own icon hides.
+
 WHAT'S NEW IN 1.5
 - Game server: the server your game is talking to, its region, ping, loss and stalls (the IP stays hidden unless you want it).
 - "Server changed" when the game moves you, and the game's up / down traffic (optional).
@@ -37,6 +40,7 @@ WHAT IT SHOWS
 - Only when something's wrong: stats show up only while they're in trouble (GPU hot, ping high, RAM almost full)
 - Packet loss and jitter next to ping
 - Ctrl+Shift+O shows or hides it
+- With Hallow Hub running, Overlay's menu is in Hub's one Hallow icon (turn off "Use the Hallow icon" to keep Overlay's own)
 
 GOOD TO KNOW
 - It's its own see-through window: nothing is injected into the game, so it's safe with anti-cheat.

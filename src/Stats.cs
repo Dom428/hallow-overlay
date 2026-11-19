@@ -33,6 +33,7 @@ namespace HallowOverlay
         [DataMember] public bool LossJitter = true;      // packet loss and jitter next to ping
         [DataMember] public bool NowPlaying = true;      // the song / video playing (from Hallow Mixer)
         [DataMember] public bool Server = true, Traffic = false;   // the game's server (region, ping, loss, stalls); the game's up / down traffic
+        [DataMember] public bool UseHallowIcon = true;   // let Hallow Hub show one tray icon for all Hallow apps
         [DataMember] public bool HideServerIp = true;    // show the region, never the server's IP (for streaming)
         [DataMember] public double HotGpu = 80, HighPing = 80, RamFull = 85;   // "in trouble" from: GPU °C, ping ms, RAM % used
         // Games with their own corner, size and stats (by game name). Everything above "PingHost" is the look; the rest is global.
@@ -41,7 +42,7 @@ namespace HallowOverlay
         {
             Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; TrayOnClose = true;
             OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
-            OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
+            OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
         }
         [OnDeserialized] void Fix(StreamingContext c) { if (OffGames == null) OffGames = new List<string>(); }
 

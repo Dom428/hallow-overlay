@@ -93,6 +93,26 @@ namespace HallowOverlay
 
         public static string Json(Dictionary<string, object> d) { return new JavaScriptSerializer().Serialize(d); }
 
+        // Hallow Hub's pipe (HALLOW_HUB_PIPE replaces it for tests with a fake Hub)
+        public static string HubPipe
+        {
+            get { var e = Environment.GetEnvironmentVariable("HALLOW_HUB_PIPE"); return string.IsNullOrEmpty(e) ? "HallowFamily.Hub." + Environment.UserName : e; }
+        }
+        // One command to another app's pipe: its reply, or null when it isn't there or doesn't answer in time.
+        public static string Ask(string pipe, string line, int ms)
+        {
+            try
+            {
+                using (var c = new NamedPipeClientStream(".", pipe, PipeDirection.InOut, PipeOptions.Asynchronous))
+                {
+                    c.Connect(ms);
+                    var b = Encoding.UTF8.GetBytes(line.Replace("\n", " ") + "\n"); c.Write(b, 0, b.Length); c.Flush();
+                    return ReadLine(c, ms + 1000);
+                }
+            }
+            catch { return null; }
+        }
+
         // status.json, written atomically (tmp file, then replace)
         public static void WriteStatus(string json)
         {

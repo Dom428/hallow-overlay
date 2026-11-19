@@ -21,14 +21,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.6.0.0")]
+[assembly: AssemblyFileVersion("1.6.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.5";
+        public const string Version = "1.6";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -185,7 +185,7 @@ namespace HallowOverlay
         readonly OverlayWindow ov = new OverlayWindow();
         bool shown = true, exiting, toldTray; readonly bool startHidden;
         Border preview; TextBlock state; WF.NotifyIcon tray; WF.ToolStripMenuItem trayShow;
-        DispatcherTimer tick, poll, msgTimer;
+        DispatcherTimer tick, poll, msgTimer; readonly HubIcon hub = new HubIcon(); WF.ToolStripMenuItem trayBad;
         string msg; bool msgStrong; DateTime msgUntil;            // flash / remind from another Hallow app
         string lastStatus;                                       // what status.json says now (without the time)
         string exclusiveGame; readonly HashSet<string> toldExclusive = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -205,7 +205,7 @@ namespace HallowOverlay
                 if (!exiting && S.TrayOnClose && !Snap.On)
                 {
                     e.Cancel = true; Hide();
-                    if (!toldTray && tray != null) { toldTray = true; tray.ShowBalloonTip(4000, "Hallow Overlay", "Still running - the overlay shows up when you play. Ctrl+Shift+O hides it. Right-click the icon to quit.", WF.ToolTipIcon.None); }
+                    if (!toldTray && tray != null) { toldTray = true; Balloon("Hallow Overlay", "Still running - the overlay shows up when you play. Ctrl+Shift+O hides it. Right-click the icon to quit.", 4000); }
                 }
                 else Quit();
             };
@@ -252,6 +252,12 @@ namespace HallowOverlay
                 case "remind":
                     if (arg.Length == 0) return "error no text";
                     ShowMessage(arg, cmd == "remind"); return "ok";
+                case "open": ShowFromTray(); return "ok";
+                case "menu": return "ok " + Link.Json(new Dictionary<string, object> { { "app", "Overlay" }, { "items", MenuItems().ToArray() } });
+                case "invoke": return Invoke(arg);
+                case "quit":
+                    var qt = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) }; qt.Tick += (s, e) => { qt.Stop(); Quit(); }; qt.Start();   // after the reply is sent
+                    return "ok";
                 case "game-on":
                 case "game-off":
                     if (arg.Length == 0) return "error no game name";
@@ -261,6 +267,51 @@ namespace HallowOverlay
                 default: return "error unknown command";
             }
         }
+        // ---- One Hallow icon: what Hub's menu shows for Overlay, and running those items
+        OverlaySettings CurrentLook { get { var c = Current; return S.LookFor(c == null ? null : (c.Game.Parent ?? c.Game).Name); } }
+        List<Dictionary<string, object>> MenuItems()
+        {
+            var l = new List<Dictionary<string, object>>();
+            l.Add(new Dictionary<string, object> { { "id", "toggle" }, { "label", "Show the overlay" }, { "checked", shown } });
+            l.Add(new Dictionary<string, object> { { "id", "only-bad" }, { "label", "Only when something's wrong" }, { "checked", CurrentLook.OnlyBad } });
+            l.Add(new Dictionary<string, object> { { "id", "-" } });
+            l.Add(new Dictionary<string, object> { { "id", "settings" }, { "label", "Settings" } });
+            return l;
+        }
+        string Invoke(string id)
+        {
+            switch (id)
+            {
+                case "toggle": Toggle(); return "ok";
+                case "only-bad": ToggleOnlyBad(); return "ok";
+                case "settings": ShowFromTray(); return "ok";
+                default: return "error unknown item";
+            }
+        }
+        void ToggleOnlyBad()
+        {
+            var c = Current; var k = S.PerGameKey(c == null ? null : (c.Game.Parent ?? c.Game).Name);
+            var l = k != null ? S.PerGame[k] : S; l.OnlyBad = !l.OnlyBad; S.Save();
+            if (lookHost != null) BuildLook();
+            Refresh();
+        }
+        // A tray message: from Hub's icon while Hub hosts it (our own icon comes back for a moment if Hub doesn't take it).
+        void Balloon(string title, string text, int ms)
+        {
+            if (tray == null) return;
+            if (!hub.Hosted) { tray.ShowBalloonTip(ms, title, text, WF.ToolTipIcon.None); return; }
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                if (HubIcon.Notify(title, text)) return;
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    tray.Visible = true; tray.ShowBalloonTip(ms, title, text, WF.ToolTipIcon.None);
+                    var back = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };
+                    back.Tick += (s, e) => { back.Stop(); if (hub.Hosted && !exiting) tray.Visible = false; }; back.Start();
+                }));
+            });
+        }
+
         public void ShowMessage(string text, bool strong)
         {
             msg = text; msgStrong = strong; msgUntil = DateTime.Now.AddSeconds(strong ? 8 : 2.5);
@@ -270,11 +321,11 @@ namespace HallowOverlay
         string StatusJson()
         {
             return Link.Json(new Dictionary<string, object> { { "app", "Overlay" }, { "version", Program.Version }, { "updated", DateTime.Now.ToString("s") },
-                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() } });
+                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted } });
         }
         void WriteStatus(bool force)
         {
-            var now = ov.IsVisible + "|" + string.Join("|", S.OffGames);
+            var now = ov.IsVisible + "|" + hub.Hosted + "|" + string.Join("|", S.OffGames);
             if (!force && now == lastStatus) return;
             lastStatus = now; Link.WriteStatus(StatusJson());
         }
@@ -287,7 +338,7 @@ namespace HallowOverlay
             int st = 0; try { SHQueryUserNotificationState(out st); } catch { }
             exclusiveGame = game != null && st == 3 ? game : null;   // 3 = QUNS_RUNNING_D3D_FULL_SCREEN
             if (exclusiveGame != null && toldExclusive.Add(exclusiveGame) && tray != null)
-                tray.ShowBalloonTip(8000, "Hallow Overlay can't show over " + exclusiveGame, exclusiveGame + " is in exclusive fullscreen - Windows doesn't let anything draw over that. Switch it to borderless (windowed fullscreen) in the game's video settings.", WF.ToolTipIcon.None);
+                Balloon("Hallow Overlay can't show over " + exclusiveGame, exclusiveGame + " is in exclusive fullscreen - Windows doesn't let anything draw over that. Switch it to borderless (windowed fullscreen) in the game's video settings.", 8000);
         }
         // The frame counter only runs while a game is running and FPS is on.
         // The game server finder only runs while a game is running and its Server or traffic stat is on.
@@ -444,6 +495,7 @@ namespace HallowOverlay
             };
             sw2("Only while a game is running (Steam, Battle.net, Epic, EA, Ubisoft, GOG, Riot, Xbox)", S.OnlyInGame, v => S.OnlyInGame = v);
             sw2("Keep running in the tray when I close this window", S.TrayOnClose, v => S.TrayOnClose = v);
+            sw2("Use the Hallow icon: when Hallow Hub is running, its one tray icon has Overlay's menu (Overlay's own icon hides)", S.UseHallowIcon, v => { S.UseHallowIcon = v; hub.CheckNow(); });
             sw2("Start with Windows (in the tray)", StartsWithWindows(), v => SetStartWithWindows(v));
             sp.Children.Add(more);
             foot = new TextBlock { Text = FootText(), Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
@@ -558,13 +610,18 @@ namespace HallowOverlay
             var menu = new WF.ContextMenuStrip();
             var open = new WF.ToolStripMenuItem("Overlay settings"); open.Font = new System.Drawing.Font(open.Font, System.Drawing.FontStyle.Bold); open.Click += (s, e) => ShowFromTray(); menu.Items.Add(open);
             trayShow = new WF.ToolStripMenuItem("Show the overlay   (Ctrl+Shift+O)") { Checked = true }; trayShow.Click += (s, e) => Dispatcher.BeginInvoke(new Action(Toggle)); menu.Items.Add(trayShow);
+            trayBad = new WF.ToolStripMenuItem("Only when something's wrong"); trayBad.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ToggleOnlyBad)); menu.Items.Add(trayBad);
+            menu.Opening += (s, e) => { trayBad.Checked = CurrentLook.OnlyBad; };
             menu.Items.Add(new WF.ToolStripSeparator());
             var quit = new WF.ToolStripMenuItem("Quit"); quit.Click += (s, e) => Quit(); menu.Items.Add(quit);
             tray.ContextMenuStrip = menu;
             tray.MouseClick += (s, e) => { if (e.Button == WF.MouseButtons.Left) ShowFromTray(); };
+            hub.Enabled = () => S.UseHallowIcon;
+            hub.Changed = on => Dispatcher.BeginInvoke(new Action(() => { if (tray != null && !exiting) tray.Visible = !on; WriteStatus(false); }));
+            hub.Start();
         }
         public void ShowFromTray() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); Refresh(); }
-        void Quit() { exiting = true; sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
+        void Quit() { exiting = true; hub.Stop(); sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
 
         public void SnapAll(string dir)
         {
