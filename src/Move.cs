@@ -42,10 +42,30 @@ namespace HallowOverlay
             WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = false; ShowActivated = false;
             SizeToContent = SizeToContent.WidthAndHeight; ResizeMode = ResizeMode.NoResize; Focusable = false; FontFamily = new FontFamily("Segoe UI"); IsHitTestVisible = false;
             SourceInitialized += (s, e) => { hwnd = new WindowInteropHelper(this).Handle; SetClickThrough(true); HwndSource.FromHwnd(hwnd).AddHook(Hook); };
-            MouseLeftButtonDown += (s, e) => { if (Moving) { Poke(); try { DragMove(); } catch { } } };
             PreviewKeyDown += OnKey;
         }
         public IntPtr Handle { get { return hwnd; } }
+
+        // ---- dragging: the window follows the pointer from where the press started (snapping unless Shift / Alt, always on a screen)
+        bool dragging; Point dragFrom; Rect dragStart;
+        public bool Dragging { get { return dragging; } }
+        public bool BeginDrag(Point screenPt)
+        {
+            if (!Moving) return false;
+            var r = WindowRect(); if (r.IsEmpty) return false;
+            dragging = true; inDrag = true; dragFrom = screenPt; dragStart = r; Poke(); return true;
+        }
+        public void DragTo(Point screenPt)
+        {
+            if (!dragging) return;
+            var r = new Rect(dragStart.X + screenPt.X - dragFrom.X, dragStart.Y + screenPt.Y - dragFrom.Y, dragStart.Width, dragStart.Height);
+            r = Adjust(r, !NoSnap()); MoveTo(r);
+        }
+        public void EndDrag()
+        {
+            if (!dragging) return;
+            dragging = false; inDrag = false; Commit(); Poke();
+        }
 
         // ---- click-through
         void SetClickThrough(bool on)
@@ -110,6 +130,16 @@ namespace HallowOverlay
             if (Moving) PlaceHint(r, s);
         }
 
+        // While the panel is hidden: where it would go (for status.json), from its last size - nothing moves.
+        public void Predict(OverlaySettings p)
+        {
+            if (hwnd == IntPtr.Zero || ActualWidth <= 0) return;
+            var list = ScreensSource(); bool found; var s = Placement.Pick(list, p.ScreenId, p.Screen, out found);
+            double k = DeviceScale(), w = Math.Round(ActualWidth * k), h = Math.Round(ActualHeight * k);
+            var r = Placement.Compute(p.Anchor, p.Margin, p.OffX, p.OffY, s, w, h);
+            LastRect = new Rect(Math.Round(r.X), Math.Round(r.Y), w, h); LastScreen = s; LastScreenFound = found;
+        }
+
         // ---- move mode
         public void BeginMove(OverlaySettings target, bool activate)
         {
@@ -119,7 +149,7 @@ namespace HallowOverlay
                 Moving = true; LastGuide = "";
                 SetClickThrough(false); IsHitTestVisible = true; Focusable = true;
                 ShowPanel();
-                if (hint == null) { hint = new MoveHint(); hint.Done = () => EndMove("done"); }
+                if (hint == null) { hint = new MoveHint(); hint.Done = () => EndMove("done"); hint.Owner2 = this; }
                 if (!hint.IsVisible) hint.Show();
                 UpdateLayout(); var r = WindowRect(); if (!r.IsEmpty) PlaceHint(r, Placement.At(ScreensSource(), Center(r)));
                 if (moveTimer == null) { moveTimer = new DispatcherTimer(); moveTimer.Tick += (s, e) => EndMove("timeout"); }
@@ -130,7 +160,7 @@ namespace HallowOverlay
         void Poke() { if (moveTimer == null) return; moveTimer.Stop(); moveTimer.Interval = MoveTimeout; if (Moving) moveTimer.Start(); }
         public void EndMove(string why)
         {
-            bool was = Moving; Moving = false; inDrag = false;
+            bool was = Moving; Moving = false; inDrag = false; if (dragging) { dragging = false; ReleaseCapture(); }
             if (moveTimer != null) moveTimer.Stop();
             if (hint != null && hint.IsVisible) hint.Hide();
             ShowPanel();
@@ -178,9 +208,28 @@ namespace HallowOverlay
             else if (k == Key.Up) { Nudge(0, -step); e.Handled = true; }
             else if (k == Key.Down) { Nudge(0, step); e.Handled = true; }
         }
+        [DllImport("user32.dll")] static extern IntPtr SetCapture(IntPtr h);
+        [DllImport("user32.dll")] static extern bool ReleaseCapture();
+        // 1.16: the drag runs on the window's own mouse messages (button down, moves with the mouse captured, button up),
+        // not WPF's DragMove. The screen point is where the window is now + the message's client point.
+        public const int WM_MOUSEMOVE = 0x0200, WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, WM_CAPTURECHANGED = 0x0215;
+        public static Point ScreenPoint(Rect win, IntPtr lp) { long v = lp.ToInt64(); return new Point(win.X + (short)(v & 0xFFFF), win.Y + (short)((v >> 16) & 0xFFFF)); }
+        // mouse messages from this window or the hint card; true = used
+        public bool MouseMessage(IntPtr from, Rect fromRect, int msg, IntPtr lp)
+        {
+            switch (msg)
+            {
+                case WM_LBUTTONDOWN: if (BeginDrag(ScreenPoint(fromRect, lp))) { SetCapture(from); return true; } return false;
+                case WM_MOUSEMOVE: if (!dragging) return false; DragTo(ScreenPoint(fromRect, lp)); return true;
+                case WM_LBUTTONUP: if (!dragging) return false; DragTo(ScreenPoint(fromRect, lp)); EndDrag(); ReleaseCapture(); return true;
+                case WM_CAPTURECHANGED: if (dragging && lp != from) EndDrag(); return false;
+            }
+            return false;
+        }
         IntPtr Hook(IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled)
         {
             if (!Moving) return IntPtr.Zero;
+            if (msg >= WM_MOUSEMOVE && msg <= WM_LBUTTONUP || msg == WM_CAPTURECHANGED) { if (MouseMessage(h, WindowRect(), msg, lp)) { handled = true; return IntPtr.Zero; } }
             switch (msg)
             {
                 case WM_ENTERSIZEMOVE: inDrag = true; Poke(); break;
@@ -219,19 +268,32 @@ namespace HallowOverlay
         [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr h, int i, int v);
         [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
         [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out OverlayWindow.RECT r);
-        public Action Done; IntPtr hwnd; TextBlock guide; public Button DoneButton;
+        public Action Done; IntPtr hwnd; TextBlock guide; public Button DoneButton; public OverlayWindow Owner2;
         public MoveHint()
         {
             WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = false; ShowActivated = false;
             SizeToContent = SizeToContent.WidthAndHeight; ResizeMode = ResizeMode.NoResize; FontFamily = new FontFamily("Segoe UI"); Left = -32000; Top = -32000;
             Content = Card(() => { if (Done != null) Done(); }, out guide, out DoneButton);
             SourceInitialized += (s, e) => { hwnd = new WindowInteropHelper(this).Handle; SetWindowLong(hwnd, -20, GetWindowLong(hwnd, -20) | OverlayWindow.WS_EX_NOACTIVATE | OverlayWindow.WS_EX_TOOLWINDOW); };
+            // "Drag me" on the card: dragging the card (anywhere but Done) moves the panel too (1.16)
+            Cursor = Cursors.SizeAll;
+            SourceInitialized += (s, e) => HwndSource.FromHwnd(hwnd).AddHook((IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) =>
+            {
+                if (Owner2 == null || !Owner2.Moving) return IntPtr.Zero;
+                if (msg == OverlayWindow.WM_LBUTTONDOWN && OverDone(OverlayWindow.ScreenPoint(WindowRect(), lp))) return IntPtr.Zero;   // Done stays a button
+                if ((msg >= OverlayWindow.WM_MOUSEMOVE && msg <= OverlayWindow.WM_LBUTTONUP || msg == OverlayWindow.WM_CAPTURECHANGED) && Owner2.MouseMessage(h, WindowRect(), msg, lp)) handled = true;
+                return IntPtr.Zero;
+            });
+        }
+        bool OverDone(Point screen)
+        {
+            try { var tl = DoneButton.PointToScreen(new Point(0, 0)); var br = DoneButton.PointToScreen(new Point(DoneButton.ActualWidth, DoneButton.ActualHeight)); return new Rect(tl, br).Contains(screen); } catch { return false; }
         }
         public static FrameworkElement Card(Action done, out TextBlock guide, out Button doneBtn)
         {
             var acc = Accent.Brush();
             var dp = new DockPanel();
-            doneBtn = new Button { Content = "Done", MinWidth = 70, Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(12, 4, 12, 4) };
+            doneBtn = new Button { Cursor = Cursors.Hand, Content = "Done", MinWidth = 70, Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(12, 4, 12, 4) };
             var st = Application.Current == null ? null : Application.Current.TryFindResource("Accent") as Style; if (st != null) doneBtn.Style = st;
             doneBtn.Click += (s, e) => done(); DockPanel.SetDock(doneBtn, Dock.Right); dp.Children.Add(doneBtn);
             var ic = Icons.Make("expand", 16, acc); ic.Margin = new Thickness(0, 0, 10, 0); ic.VerticalAlignment = VerticalAlignment.Center; DockPanel.SetDock(ic, Dock.Left); dp.Children.Add(ic);
@@ -244,6 +306,7 @@ namespace HallowOverlay
         }
         public void SetGuide(string g) { guide.Text = string.IsNullOrEmpty(g) ? "" : "Snapped: " + g; guide.Visibility = string.IsNullOrEmpty(g) ? Visibility.Collapsed : Visibility.Visible; }
         public Rect WindowRect() { OverlayWindow.RECT r; if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out r)) return Rect.Empty; return new Rect(r.left, r.top, r.right - r.left, r.bottom - r.top); }
+        public IntPtr Handle2 { get { return hwnd; } }
         public void MoveTo(int x, int y) { if (hwnd != IntPtr.Zero) SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0, 0x1 | 0x4 | 0x10); }
     }
 }

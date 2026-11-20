@@ -5,6 +5,10 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.16
+- Dragging the panel in "Move it" mode works reliably now, and you can drag the "Drag me" card too.
+- After moving, the panel stays in view for a moment so you see where it went.
+
 WHAT'S NEW IN 1.15
 - Put it anywhere: 9 spots (top / middle / bottom, left / centre / right), any screen, and an edge offset slider.
 - Move it: drag the panel where you want it - it snaps to the spots and the screen's edges and centre lines, arrow keys nudge. From the settings, the tray menu or an optional hotkey.

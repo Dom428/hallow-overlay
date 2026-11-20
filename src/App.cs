@@ -22,14 +22,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.15.0.0")]
-[assembly: AssemblyFileVersion("1.15.0.0")]
+[assembly: AssemblyVersion("1.16.0.0")]
+[assembly: AssemblyFileVersion("1.16.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.15";
+        public const string Version = "1.16";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -486,6 +486,7 @@ namespace HallowOverlay
         {
             moveGame = null; S.Save();
             if (why == "timeout") ShowMessage("Done moving (2 minutes without a drag) - the overlay is click-through again", false, 4);
+            else if (why != "off") { var l = S.LookFor(Current == null ? null : (Current.Game.Parent ?? Current.Game).Name); ShowMessage("Saved here: " + Placement.SpotName(l.Anchor) + (l.OffX != 0 || l.OffY != 0 ? " (moved)" : ""), false, 3); }   // it stays in view a moment, even with no game running
             Refresh(); if (lookHost != null && IsVisible) BuildLook(); WriteStatus(true);
         }
         Dictionary<string, object> PositionInfo()
@@ -650,7 +651,7 @@ namespace HallowOverlay
                 if (!ov.IsVisible) ov.Show();
                 ov.Place(look);
             }
-            else if (ov.IsVisible) ov.Hide();
+            else { if (ov.IsVisible) ov.Hide(); ov.Predict(look); }   // status.json still says where it goes
             ov.EnsureClickThrough();
             lastLook = look;
             if (IsVisible)
@@ -903,7 +904,7 @@ namespace HallowOverlay
                 var ownSpot = new CheckBox { Content = "Its own spot in this game (off: use my usual spot)", IsChecked = T.OwnSpot, Style = (Style)FindResource("Switch"), Margin = new Thickness(0, 0, 0, 6) };
                 ownSpot.Click += (s, e) =>
                 {
-                    if (ov.Moving) ov.EndMove("done");
+                    if (ov.Moving) ov.EndMove("off");
                     T.OwnSpot = ownSpot.IsChecked == true; if (T.OwnSpot) Placement.CopySpot(S, T);   // starts from the usual spot
                     S.Save(); BuildLook(); Refresh();
                 };
@@ -921,7 +922,7 @@ namespace HallowOverlay
                     IsChecked = Placement.Valid(P.Anchor) == key && P.OffX == 0 && P.OffY == 0, ToolTip = name + " of the screen" };
                 c.Click += (s, e) =>
                 {
-                    if (ov.Moving) ov.EndMove("done");
+                    if (ov.Moving) ov.EndMove("off");
                     P.Anchor = key; P.Corner = Placement.CornerOf(key); P.OffX = P.OffY = 0; S.Save();
                     foreach (ToggleButton x in grid.Children) x.IsChecked = x == c;
                     UpdatePosText(); Refresh(); WriteStatus(true);
@@ -962,7 +963,7 @@ namespace HallowOverlay
                 ToolTip = gameSpot ? "Back to your usual spot" : "Top left, 14 px from the edge, on the main screen" };
             rs.Click += (s, e) =>
             {
-                if (ov.Moving) ov.EndMove("done");
+                if (ov.Moving) ov.EndMove("off");
                 if (gameSpot) T.OwnSpot = false; else Placement.Reset(S);
                 S.Save(); BuildLook(); Refresh(); WriteStatus(true);
             };
