@@ -5,6 +5,11 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.15
+- Put it anywhere: 9 spots (top / middle / bottom, left / centre / right), any screen, and an edge offset slider.
+- Move it: drag the panel where you want it - it snaps to the spots and the screen's edges and centre lines, arrow keys nudge. From the settings, the tray menu or an optional hotkey.
+- A game can have its own spot, or use your usual one. Reset position puts it back.
+
 WHAT'S NEW IN 1.14
 - Your own hotkeys: change any of them in the settings (click the box, press the keys), turn one off, or reset to the defaults.
 - A combo another app already owns is refused with a message, and the old one keeps working.

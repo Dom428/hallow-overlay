@@ -106,6 +106,7 @@ namespace HallowOverlay
             new HotkeyAction("bench", "Start / stop a benchmark", "Ctrl+Shift+F9"),
             new HotkeyAction("only-bad", "Only when something's wrong (on / off)", ""),
             new HotkeyAction("settings", "Open Overlay's settings", ""),
+            new HotkeyAction("move", "Move the overlay (drag to place)", ""),
         };
 
         [DllImport("user32.dll", SetLastError = true)] static extern bool RegisterHotKey(IntPtr h, int id, uint mods, uint vk);

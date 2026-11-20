@@ -19,6 +19,7 @@
 | **1.12** | Benchmark mode (Ctrl+Shift+F9): average FPS, 1% / 0.1% lows, frame-time percentiles, stutters and a chart, saved as PNG + CSV; optional CSV log of every stat |
 | **1.13** | Layout editor: order of the stats, own labels, a colour per stat, text or text + a small graph of the last minute, text size (per game too) |
 | **1.14** | Your own hotkeys: every hotkey (show / hide, benchmark, plus new optional only-when-wrong and open settings) rebindable with a press-the-keys box, Off per hotkey, Reset to defaults; refuses its own duplicates and combos another app owns (keeps the old one) |
+| **1.15** | Put it anywhere: 9 spots, any screen (by monitor id, main screen while it's missing), edge offset slider; Move it mode (settings, tray / Hallow menu `invoke move`, optional hotkey) with snapping to spots / edges / centre lines, arrow-key nudges, click-through restored on Enter / Esc / Done / focus loss / 2 min; saved as spot + offset share of the screen (survives resolution / DPI); own spot per game or "use my usual spot"; Reset position; `position` in status.json |
 
 ## Next
 
@@ -30,6 +31,7 @@
 - Check the One Hallow icon with the real Hallow Hub 2.4 (menu, Exit, messages from Hub's icon) - tested with a fake Hub only
 - Check match summaries after real games (the summary when a game closes, history entries, servers per region) - tested with made-up samples only
 - Check the frame-time graph against a real game's stutters and the GPU power / clock numbers under load
+- Check move mode and placement on real screens (two screens with different DPI, a screen left of the main one, unplugging one) - tested with made-up screens and the test's own window only; with WPF's system-DPI mode Windows scales the panel on screens with another DPI
 
 ## Later
 - CPU temperature - Windows has no reliable source for it without an admin-level driver (the WMI thermal zone is usually the motherboard or a fixed value), so it waits until there's a safe way
@@ -49,3 +51,4 @@ What MSI Afterburner + RivaTuner Statistics Server, the Xbox Game Bar performanc
 - **Logging to a file** (Afterburner's hardware monitor log) - buildable as CSV -> 1.12
 - **OSD layout editor: order, labels, colours, font size, text or graph per item** (RTSS / Afterburner) - buildable -> 1.13
 - **Your own hotkeys** (Afterburner) - buildable -> 1.14
+- **Put the OSD anywhere: free position, drag to place, any screen** (RTSS / Afterburner, Game Bar widgets) - buildable -> 1.15

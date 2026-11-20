@@ -22,14 +22,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.14.0.0")]
-[assembly: AssemblyFileVersion("1.14.0.0")]
+[assembly: AssemblyVersion("1.15.0.0")]
+[assembly: AssemblyFileVersion("1.15.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.14";
+        public const string Version = "1.15";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -215,26 +215,6 @@ namespace HallowOverlay
         }
     }
 
-    // Click-through, never takes focus, never in the taskbar or Alt+Tab.
-    public class OverlayWindow : Window
-    {
-        [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int i);
-        [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr h, int i, int v);
-        public OverlayWindow()
-        {
-            WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = false; ShowActivated = false;
-            SizeToContent = SizeToContent.WidthAndHeight; ResizeMode = ResizeMode.NoResize; Focusable = false; FontFamily = new FontFamily("Segoe UI"); IsHitTestVisible = false;
-            SourceInitialized += (s, e) => { var h = new WindowInteropHelper(this).Handle; SetWindowLong(h, -20, GetWindowLong(h, -20) | 0x20 | 0x80 | 0x08000000 | 0x80000); };
-        }
-        public void Place(string corner)
-        {
-            UpdateLayout();
-            const double m = 14; double sw = SystemParameters.PrimaryScreenWidth, sh = SystemParameters.PrimaryScreenHeight;   // whole screen: games cover the taskbar
-            Left = corner.EndsWith("r") ? sw - ActualWidth - m : m;
-            Top = corner.StartsWith("b") ? sh - ActualHeight - m : m;
-        }
-    }
-
     public class MainWindow : Window
     {
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int val, int size);
@@ -278,6 +258,9 @@ namespace HallowOverlay
             try { games = Library.Scan(new List<Game>()); } catch { }
             AddTestGame();
             sampler.PingHost = S.PingHost; sampler.Start();
+            ov.Moved = () => { S.Save(); UpdatePosText(); WriteStatus(true); };
+            ov.Ended = MoveEnded;
+            SystemEvents.DisplaySettingsChanged += (s, e) => Dispatcher.BeginInvoke(new Action(() => { Refresh(); WriteStatus(true); }));   // screens plugged in / out, resolution or DPI changed
             SetupTray();
             // your own hotkeys (1.14) on this window's handle (it exists even while the window is hidden)
             var hwnd = new WindowInteropHelper(this).EnsureHandle();
@@ -427,6 +410,7 @@ namespace HallowOverlay
                 case "open": ShowFromTray(); return "ok";
                 case "menu": return "ok " + Link.Json(new Dictionary<string, object> { { "app", "Overlay" }, { "items", MenuItems().ToArray() } });
                 case "invoke": return Invoke(arg);
+                case "move": return ToggleMove(arg.Equals("force", StringComparison.OrdinalIgnoreCase), null);   // scripts: not over a focused game unless "move force"
                 case "quit":
                     var qt = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) }; qt.Tick += (s, e) => { qt.Stop(); Quit(); }; qt.Start();   // after the reply is sent
                     return "ok";
@@ -448,6 +432,7 @@ namespace HallowOverlay
             l.Add(new Dictionary<string, object> { { "id", "only-bad" }, { "label", "Only when something's wrong" }, { "checked", CurrentLook.OnlyBad } });
             l.Add(new Dictionary<string, object> { { "id", "bench" }, { "label", benchOn ? "Stop benchmark" : "Start benchmark" } });
             l.Add(new Dictionary<string, object> { { "id", "history" }, { "label", "Match history" } });
+            l.Add(new Dictionary<string, object> { { "id", "move" }, { "label", ov.Moving ? "Done moving the overlay" : "Move the overlay (drag to place)" }, { "checked", ov.Moving } });
             l.Add(new Dictionary<string, object> { { "id", "-" } });
             l.Add(new Dictionary<string, object> { { "id", "settings" }, { "label", "Settings" } });
             return l;
@@ -461,8 +446,54 @@ namespace HallowOverlay
                 case "settings": ShowFromTray(); return "ok";
                 case "history": ShowHistory(); return "ok";
                 case "bench": ToggleBench(); return "ok";
+                case "move": return ToggleMove(true, null);   // a menu click or the hotkey: the user asked for it
                 default: return "error unknown item";
             }
+        }
+
+        // ---- "Move it" (1.15): drag the panel to place it
+        string moveGame;              // the game whose own spot is being moved (null: the usual spot, or the running game's own)
+        OverlaySettings lastLook;     // the look the panel was last placed with
+        [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out int pid);
+        // A game has the focus: it's in exclusive fullscreen, or its window is the one in front.
+        bool GameHasFocus()
+        {
+            var cur = Current; if (cur == null) return false;
+            int st = 0; try { SHQueryUserNotificationState(out st); } catch { }
+            if (st == 3) return true;
+            int pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+            return pid != 0 && cur.Pids.Contains(pid);
+        }
+        // Move mode never starts by itself over a game that has the focus - only when you asked for it (menu, hotkey, settings, "move force").
+        public static bool MoveAllowed(bool explicitAsk, bool gameFocused) { return explicitAsk || !gameFocused; }
+        string ToggleMove(bool explicitAsk, string forGame)
+        {
+            if (Snap.On) return "error not now";
+            if (ov.Moving) { ov.EndMove("done"); return "ok done"; }
+            if (!MoveAllowed(explicitAsk, GameHasFocus())) return "error a game has the focus - use the menu, the hotkey or \"move force\"";
+            // which spot: a game's own one (the game picked in the settings, else the running game) if it has one, else the usual spot
+            var c = Current; string g = IsVisible && editGame != null ? editGame : c == null ? null : (c.Game.Parent ?? c.Game).Name;
+            var k = S.PerGameKey(g); OverlaySettings target = S; moveGame = null;
+            if (k != null && S.PerGame[k].OwnSpot) { target = S.PerGame[k]; moveGame = k; }
+            else if (k != null) moveGame = k;   // the game's own look, at the usual spot
+            ov.BeginMove(target, true);
+            Refresh();   // shows the panel (even if hidden) and puts it in place
+            WriteStatus(true);
+            return "ok moving";
+        }
+        void MoveEnded(string why)
+        {
+            moveGame = null; S.Save();
+            if (why == "timeout") ShowMessage("Done moving (2 minutes without a drag) - the overlay is click-through again", false, 4);
+            Refresh(); if (lookHost != null && IsVisible) BuildLook(); WriteStatus(true);
+        }
+        Dictionary<string, object> PositionInfo()
+        {
+            var p = lastLook ?? CurrentLook; var r = ov.LastRect; var s = ov.LastScreen;
+            return new Dictionary<string, object> { { "anchor", Placement.Valid(p.Anchor) }, { "spot", Placement.SpotName(p.Anchor) }, { "margin", p.Margin }, { "offsetX", p.OffX }, { "offsetY", p.OffY },
+                { "screen", s == null ? p.Screen : s.Device }, { "screenName", s == null ? "" : s.Name }, { "screenFound", ov.LastScreenFound }, { "ownSpot", p.OwnSpot },
+                { "x", r.IsEmpty ? 0 : r.X }, { "y", r.IsEmpty ? 0 : r.Y }, { "width", r.IsEmpty ? 0 : r.Width }, { "height", r.IsEmpty ? 0 : r.Height }, { "moving", ov.Moving }, { "clickThrough", ov.IsClickThrough } };
         }
         void ToggleOnlyBad()
         {
@@ -515,7 +546,7 @@ namespace HallowOverlay
         string StatusJson()
         {
             var d = new Dictionary<string, object> { { "app", "Overlay" }, { "version", Program.Version }, { "updated", DateTime.Now.ToString("s") },
-                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted }, { "matches", matches.Take(5).Select(m => m.Short()).ToArray() }, { "lastCrash", LastCrashIso() }, { "hotkeys", HotkeySet.Actions.ToDictionary(a => a.Id, a => (object)(keys == null ? a.Default : keys.Text(a.Id))) } };
+                { "visible", ov.IsVisible }, { "offGames", S.OffGames.ToArray() }, { "hallowIcon", hub.Hosted }, { "matches", matches.Take(5).Select(m => m.Short()).ToArray() }, { "lastCrash", LastCrashIso() }, { "hotkeys", HotkeySet.Actions.ToDictionary(a => a.Id, a => (object)(keys == null ? a.Default : keys.Text(a.Id))) }, { "position", PositionInfo() } };
             if (live != null) d["live"] = live;
             if (testMode) d["testMessage"] = lastMessage;   // Hallow Remote's Live stats tab
             return Link.Json(d);
@@ -523,7 +554,7 @@ namespace HallowOverlay
         static string LastCrashIso() { var l = Crash.Last(); return l == null ? null : l.Value.ToString("s"); }
         void WriteStatus(bool force)
         {
-            var now = ov.IsVisible + "|" + hub.Hosted + "|" + matches.Count + "|" + LastCrashIso() + "|" + string.Join("|", S.OffGames);
+            var now = ov.IsVisible + "|" + hub.Hosted + "|" + matches.Count + "|" + LastCrashIso() + "|" + string.Join("|", S.OffGames) + "|" + ov.LastRect + "|" + ov.Moving + "|" + (lastLook == null ? "" : lastLook.Anchor + lastLook.OffX + "," + lastLook.OffY + lastLook.Margin + lastLook.Screen);
             if (!force && now == lastStatus) return;
             lastStatus = now; Link.WriteStatus(StatusJson());
         }
@@ -610,20 +641,23 @@ namespace HallowOverlay
             bool off = IsOff(game);
             bool want = shown && !off && (!S.OnlyInGame || cur != null);
             if (msg != null && DateTime.Now >= msgUntil) msg = null;
-            var look = S.LookFor(game);
-            if (want || msg != null)
+            var look = S.LookFor(ov.Moving && moveGame != null ? moveGame : game);
+            if (want || msg != null || ov.Moving)
             {
-                ov.Content = Panel.Build(look, x, game, session, msg, msgStrong, !want);   // messages still show briefly when the panel is hidden
+                // move mode: the whole panel (not just the stats in trouble), even while it's hidden, so you see its real size
+                var shownLook = look; if (ov.Moving && look.OnlyBad) { shownLook = look.LookCopy(); Placement.CopySpot(look, shownLook); shownLook.OnlyBad = false; }
+                ov.SetPanel(Panel.Build(shownLook, x, ov.Moving ? moveGame ?? game : game, session, msg, msgStrong, !want && !ov.Moving));   // messages still show briefly when the panel is hidden
                 if (!ov.IsVisible) ov.Show();
-                ov.Place(look.Corner);
+                ov.Place(look);
             }
             else if (ov.IsVisible) ov.Hide();
+            ov.EnsureClickThrough();
+            lastLook = look;
             if (IsVisible)
             {
                 var px = x; if (px.Fps < 0 && !fps.Denied) { px = x.Copy(); px.Fps = 144; px.FpsLow = 97; px.FpsLow01 = 81; px.FrameMs = FakeFrames(); px.FrameCount = px.FrameMs.Length; }   // what it looks like in a game
                 var pl = editGame != null ? S.LookFor(editGame) : look;
-                preview.HorizontalAlignment = pl.Corner.EndsWith("r") ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-                preview.VerticalAlignment = pl.Corner.StartsWith("b") ? VerticalAlignment.Bottom : VerticalAlignment.Top;
+                AlignPreview(pl);
                 preview.Child = Fit(Panel.Build(pl, px, editGame ?? game ?? "Delta Force", session ?? TimeSpan.FromMinutes(42)));
                 foot.Text = FootText(); serverInfo.Text = ServerText(cur != null);
                 state.Text = exclusiveGame != null && exclusiveGame == game ? ExclusiveNote(game) :
@@ -687,7 +721,7 @@ namespace HallowOverlay
             FillGames(); forBox.SelectedIndex = 0;
             forBox.DropDownOpened += (s, e) => FillGames();
             forBox.SelectionChanged += (s, e) => { if (filling) return; editGame = forBox.SelectedIndex <= 0 ? null : forBox.SelectedItem as string; BuildLook(); Refresh(); };
-            ownBox = new CheckBox { Content = "Own corner, size and stats for this game", Style = (Style)FindResource("Switch"), Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            ownBox = new CheckBox { Content = "Own look for this game (spot, size, stats)", Style = (Style)FindResource("Switch"), Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             ownBox.Click += (s, e) =>
             {
                 if (editGame == null) return;
@@ -798,7 +832,7 @@ namespace HallowOverlay
                 }
                 row.Children.Add(wp); return row;
             };
-            lookHost.Children.Add(chips("Corner", new[] { Tuple.Create("tl", "Top left"), Tuple.Create("tr", "Top right"), Tuple.Create("bl", "Bottom left"), Tuple.Create("br", "Bottom right") }, () => T.Corner, v => T.Corner = v));
+            BuildPosition(T, own);
             lookHost.Children.Add(chips("Layout", new[] { Tuple.Create("row", "One line"), Tuple.Create("col", "Column") }, () => T.Row ? "row" : "col", v => T.Row = v == "row"));
             lookHost.Children.Add(chips("Size", new[] { Tuple.Create("0.85", "Small"), Tuple.Create("1", "Medium"), Tuple.Create("1.25", "Large") },
                 () => T.Scale < 0.95 ? "0.85" : T.Scale > 1.1 ? "1.25" : "1", v => T.Scale = double.Parse(v, System.Globalization.CultureInfo.InvariantCulture)));
@@ -834,6 +868,109 @@ namespace HallowOverlay
                 IsChecked = T.OnlyBad, Style = (Style)FindResource("Switch"), Margin = new Thickness(0, 8, 0, 0) };
             bad.Click += (s, e) => { T.OnlyBad = bad.IsChecked == true; S.Save(); Refresh(); };
             lookHost.Children.Add(bad);
+        }
+
+        static List<ScreenInfo> SnapScreens()
+        {
+            var l = new List<ScreenInfo> { new ScreenInfo { Device = @"\\.\DISPLAY1", Id = "MON-A", Model = "DELL U2720Q", Bounds = new Rect(0, 0, 3840, 2160), Scale = 1.5, Primary = true },
+                new ScreenInfo { Device = @"\\.\DISPLAY2", Id = "MON-B", Model = "Generic PnP Monitor", Bounds = new Rect(-1920, 540, 1920, 1080), Scale = 1 } };
+            Monitors.Name(l); return l;
+        }
+        // ---- position (1.15): 9 spots, the screen, the edge offset, Move it, Reset - a game's own look can have its own spot
+        TextBlock posText; Func<List<ScreenInfo>> screens = Monitors.All;
+        OverlaySettings PosLook(OverlaySettings T) { return editGame != null && T != S && T.OwnSpot ? T : S; }   // where the position controls write
+        void UpdatePosText()
+        {
+            if (posText == null) return;
+            var P = PosLook(EditLook); bool found; var s = Placement.Pick(screens(), P.ScreenId, P.Screen, out found);
+            posText.Text = (ov.Moving ? "Moving - drag the panel, then Enter / Esc or Done.  " : "") + Placement.Describe(P, s, found) + ".";
+        }
+        void AlignPreview(OverlaySettings p)
+        {
+            var a = Placement.Valid(p.Anchor);
+            preview.HorizontalAlignment = a[1] == 'r' ? HorizontalAlignment.Right : a[1] == 'c' ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+            preview.VerticalAlignment = a[0] == 'b' ? VerticalAlignment.Bottom : a[0] == 'm' ? VerticalAlignment.Center : VerticalAlignment.Top;
+        }
+        void BuildPosition(OverlaySettings T, bool own)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+            var lbl = new TextBlock { Text = "Position", Width = 120, VerticalAlignment = VerticalAlignment.Top, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 0) };
+            DockPanel.SetDock(lbl, Dock.Left); row.Children.Add(lbl);
+            var body = new StackPanel(); row.Children.Add(body);
+            bool gameSpot = editGame != null && own;
+            if (gameSpot)
+            {
+                var ownSpot = new CheckBox { Content = "Its own spot in this game (off: use my usual spot)", IsChecked = T.OwnSpot, Style = (Style)FindResource("Switch"), Margin = new Thickness(0, 0, 0, 6) };
+                ownSpot.Click += (s, e) =>
+                {
+                    if (ov.Moving) ov.EndMove("done");
+                    T.OwnSpot = ownSpot.IsChecked == true; if (T.OwnSpot) Placement.CopySpot(S, T);   // starts from the usual spot
+                    S.Save(); BuildLook(); Refresh();
+                };
+                body.Children.Add(ownSpot);
+            }
+            var P = PosLook(T); bool usual = gameSpot && !T.OwnSpot;
+            var controls = new StackPanel { IsEnabled = !usual, Opacity = usual ? 0.5 : 1 }; body.Children.Add(controls);
+            var top = new StackPanel { Orientation = Orientation.Horizontal };
+            // the 9 spots as a 3 x 3 grid
+            var grid = new UniformGrid { Columns = 3, Rows = 3, Width = 300, HorizontalAlignment = HorizontalAlignment.Left };
+            foreach (var a in Placement.Spots)
+            {
+                var key = a; var name = Placement.SpotName(a);
+                var c = new ToggleButton { Content = name, Style = (Style)FindResource("Chip"), Margin = new Thickness(0, 0, 4, 4), Padding = new Thickness(6, 4, 6, 4), FontSize = 11.5,
+                    IsChecked = Placement.Valid(P.Anchor) == key && P.OffX == 0 && P.OffY == 0, ToolTip = name + " of the screen" };
+                c.Click += (s, e) =>
+                {
+                    if (ov.Moving) ov.EndMove("done");
+                    P.Anchor = key; P.Corner = Placement.CornerOf(key); P.OffX = P.OffY = 0; S.Save();
+                    foreach (ToggleButton x in grid.Children) x.IsChecked = x == c;
+                    UpdatePosText(); Refresh(); WriteStatus(true);
+                };
+                grid.Children.Add(c);
+            }
+            top.Children.Add(grid);
+            // screen and edge offset
+            var side = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
+            side.Children.Add(new TextBlock { Text = "Screen", Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, Margin = new Thickness(0, 0, 0, 3) });
+            var scr = new ComboBox { Style = (Style)FindResource("Combo"), Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
+            var list = screens(); bool found; var cur = Placement.Pick(list, P.ScreenId, P.Screen, out found);
+            var items = list.OrderBy(x => x.Name).ToList();
+            foreach (var s in items) scr.Items.Add(s.Label);
+            if (!found) { scr.Items.Add((string.IsNullOrEmpty(P.ScreenName) ? "The saved screen" : P.ScreenName) + " - not connected (main screen for now)"); scr.SelectedIndex = scr.Items.Count - 1; }
+            else scr.SelectedIndex = Math.Max(0, items.IndexOf(cur));
+            scr.SelectionChanged += (s, e) =>
+            {
+                if (scr.SelectedIndex < 0 || scr.SelectedIndex >= items.Count) return;
+                var m = items[scr.SelectedIndex];
+                P.Screen = m.Primary ? "" : m.Device; P.ScreenId = m.Primary ? "" : m.Id; P.ScreenName = m.Primary ? "" : m.Name; S.Save();
+                UpdatePosText(); Refresh(); WriteStatus(true);
+            };
+            side.Children.Add(scr);
+            var mt = new TextBlock { Text = "Edge offset: " + P.Margin.ToString("0") + " px", Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, Margin = new Thickness(0, 8, 0, 3) };
+            side.Children.Add(mt);
+            var ms = new Slider { Style = (Style)FindResource("HFader"), Minimum = 0, Maximum = 80, Value = P.Margin, Foreground = Accent.Brush(), Width = 260, HorizontalAlignment = HorizontalAlignment.Left, SmallChange = 1, LargeChange = 10, IsSnapToTickEnabled = true, TickFrequency = 1, ToolTip = "Space between the panel and the screen's edge" };
+            ms.ValueChanged += (s, e) => { P.Margin = Math.Round(ms.Value); mt.Text = "Edge offset: " + P.Margin.ToString("0") + " px"; S.Save(); UpdatePosText(); Refresh(); };
+            side.Children.Add(ms);
+            top.Children.Add(side);
+            controls.Children.Add(top);
+            var btns = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+            var mv = new Button { Content = ov.Moving ? "Done moving" : "Move it (drag to place)" + KeyTail("move"), Style = (Style)FindResource("Btn"), Padding = new Thickness(12, 4, 12, 4), IsEnabled = !usual };
+            bool wasMoving = ov.Moving;
+            mv.Click += (s, e) => { if (wasMoving) { if (ov.Moving) ov.EndMove("done"); return; } var r = ToggleMove(true, editGame); if (r.StartsWith("error")) posText.Text = r.Substring(6); else BuildLook(); };
+            btns.Children.Add(mv);
+            var rs = new Button { Content = "Reset position", Style = (Style)FindResource("Btn"), Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(12, 4, 12, 4),
+                ToolTip = gameSpot ? "Back to your usual spot" : "Top left, 14 px from the edge, on the main screen" };
+            rs.Click += (s, e) =>
+            {
+                if (ov.Moving) ov.EndMove("done");
+                if (gameSpot) T.OwnSpot = false; else Placement.Reset(S);
+                S.Save(); BuildLook(); Refresh(); WriteStatus(true);
+            };
+            btns.Children.Add(rs);
+            body.Children.Add(btns);
+            posText = new TextBlock { Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) };
+            body.Children.Add(posText); UpdatePosText();
+            lookHost.Children.Add(row);
         }
 
         // What the settings window says about the game's server.
@@ -973,6 +1110,8 @@ namespace HallowOverlay
             var bench = new WF.ToolStripMenuItem("Start benchmark" + KeyTail("bench")); bench.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ToggleBench)); menu.Items.Add(bench);
             menu.Opening += (s, e) => { bench.Text = (benchOn ? "Stop" : "Start") + " benchmark" + KeyTail("bench"); trayShow.Text = "Show the overlay" + KeyTail("toggle"); trayBad.Text = "Only when something's wrong" + KeyTail("only-bad"); };
             var hist = new WF.ToolStripMenuItem("Match history"); hist.Click += (s, e) => Dispatcher.BeginInvoke(new Action(ShowHistory)); menu.Items.Add(hist);
+            var move = new WF.ToolStripMenuItem("Move the overlay (drag to place)"); move.Click += (s, e) => Dispatcher.BeginInvoke(new Action(() => ToggleMove(true, null))); menu.Items.Add(move);
+            menu.Opening += (s, e) => { move.Text = (ov.Moving ? "Done moving the overlay" : "Move the overlay (drag to place)") + KeyTail("move"); move.Checked = ov.Moving; };
             menu.Items.Add(new WF.ToolStripSeparator());
             var quit = new WF.ToolStripMenuItem("Quit"); quit.Click += (s, e) => Quit(); menu.Items.Add(quit);
             tray.ContextMenuStrip = menu;
@@ -982,11 +1121,12 @@ namespace HallowOverlay
             hub.Start();
         }
         public void ShowFromTray() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); Refresh(); }
-        void Quit() { exiting = true; hub.Stop(); try { if (keys != null && keys.Live) keys.UnregisterAll(); } catch { } try { if (benchOn) StopBench(); statLog.Close(); } catch { } try { var m = rec.End(); if (m != null) MatchStore.Add(matches, m); } catch { } sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
+        void Quit() { exiting = true; try { ov.EndMove("off"); } catch { } hub.Stop(); try { if (keys != null && keys.Live) keys.UnregisterAll(); } catch { } try { if (benchOn) StopBench(); statLog.Close(); } catch { } try { var m = rec.End(); if (m != null) MatchStore.Add(matches, m); } catch { } sampler.Stop(); try { fps.Stop(); } catch { } try { net.Stop(); serverPing.Stop(); } catch { } if (tray != null) { tray.Visible = false; tray.Dispose(); } Application.Current.Shutdown(); }
 
         public void SnapAll(string dir)
         {
             var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97, FpsLow01 = 81, NowPlaying = "Lo-fi Beats - Rainy Night", ServerLabel = "FRA", ServerMs = 23, ServerApprox = true, ServerLoss = 0, UpKbps = 96, DownKbps = 410, GpuClock = 2610, MemClock = 10501, PowerW = 241, PowerLimitW = 285, VramUsedMB = 9420, VramTotalMB = 16376, FrameMs = FakeFrames(), FrameCount = 720 };
+            screens = SnapScreens; BuildLook();   // made-up screens: a 4K-ish main one at 150 % and one on its left
             preview.Child = Fit(Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)));
             state.Text = "Waiting for a game - it appears by itself when one starts.";
             Snap.Save(this, System.IO.Path.Combine(dir, "settings.png"), 760, 0);
@@ -1012,7 +1152,7 @@ namespace HallowOverlay
             var b = S.LookCopy(); b.OnlyBad = true;
             var tl = S.LookCopy(); tl.Traffic = true; var ty = y.Copy(); ty.Stalls = 2; one("traffic.png", Panel.Build(tl, ty, "Delta Force", null), 1100);
             one("only-bad.png", Panel.Build(b, y, "Delta Force", TimeSpan.FromMinutes(42)), 900);
-            S.PerGame["Delta Force"] = S.LookCopy(); S.PerGame["Delta Force"].Corner = "br"; S.PerGame["Delta Force"].Row = false; S.PerGame["Delta Force"].Clock = false;
+            S.PerGame["Delta Force"] = S.LookCopy(); S.PerGame["Delta Force"].Corner = "br"; S.PerGame["Delta Force"].Anchor = "br"; S.PerGame["Delta Force"].OwnSpot = true; S.PerGame["Delta Force"].Row = false; S.PerGame["Delta Force"].Clock = false;
             games = new List<Game> { new Game { Id = "1", Name = "Delta Force" }, new Game { Id = "2", Name = "Deadlock" } };
             FillGames(); forBox.SelectedIndex = 1;   // -> BuildLook for Delta Force
             var pl = S.LookFor("Delta Force");
@@ -1050,6 +1190,26 @@ namespace HallowOverlay
                 ly.Row = true; Snap.Save(new LayoutWindow(ly, "Delta Force", () => { }), System.IO.Path.Combine(dir, "layout-editor.png"), 720, 0);
             }
             SnapHotkeys(dir); Snap.Save(this, System.IO.Path.Combine(dir, "settings-hotkeys.png"), 760, 0);
+            {   // 1.15: the position section, a screen that isn't connected, and move mode
+                forBox.SelectedIndex = 0; BuildLook(); AlignPreview(S); preview.Child = Fit(Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42))); Snap.Save(this, System.IO.Path.Combine(dir, "settings-position.png"), 760, 0);
+                S.Screen = @"\\.\DISPLAY3"; S.ScreenId = "MON-C"; S.ScreenName = "Screen 3"; S.Anchor = "bc"; S.OffY = -0.02; S.Margin = 24; BuildLook(); AlignPreview(S); state.Text = "Waiting for a game - it appears by itself when one starts.";
+                Snap.Save(this, System.IO.Path.Combine(dir, "settings-position-missing.png"), 760, 0);
+                Placement.Reset(S); BuildLook();
+                forBox.SelectedIndex = Math.Max(0, forBox.Items.IndexOf("Delta Force")); AlignPreview(S.LookFor("Delta Force")); preview.Child = Fit(Panel.Build(S.LookFor("Delta Force"), x, "Delta Force", TimeSpan.FromMinutes(42)));
+                Snap.Save(this, System.IO.Path.Combine(dir, "settings-pergame-spot.png"), 760, 0); forBox.SelectedIndex = 0;
+                var stg = new Grid { Width = 960, Height = 540, ClipToBounds = true };
+                var sb = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 1) };
+                sb.GradientStops.Add(new GradientStop((Color)ColorConverter.ConvertFromString("#3A5A40"), 0)); sb.GradientStops.Add(new GradientStop((Color)ColorConverter.ConvertFromString("#24303F"), 0.6)); sb.GradientStops.Add(new GradientStop((Color)ColorConverter.ConvertFromString("#5A3A2A"), 1));
+                stg.Background = sb; var cv = new Canvas(); stg.Children.Add(cv);
+                var ml = S.LookCopy(); ml.Row = false; var mx = x.Copy(); mx.MicMuted = false;
+                var fr = OverlayWindow.Framed(Panel.Build(ml, mx, "Delta Force", TimeSpan.FromMinutes(42)), false);
+                fr.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity)); double fw = fr.DesiredSize.Width, fh = fr.DesiredSize.Height;
+                cv.Children.Add(new System.Windows.Shapes.Line { X1 = 480, X2 = 480, Y1 = 0, Y2 = 540, Stroke = Accent.Brush(), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 6, 4 }, Opacity = 0.6 });
+                Canvas.SetLeft(fr, Math.Round(480 - fw / 2)); Canvas.SetTop(fr, 14); cv.Children.Add(fr);
+                TextBlock gt; Button db; var card = MoveHint.Card(() => { }, out gt, out db); gt.Text = "Snapped: top / centre";
+                card.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity)); Canvas.SetLeft(card, Math.Round(480 - card.DesiredSize.Width / 2)); Canvas.SetTop(card, 14 + fh + 8); cv.Children.Add(card);
+                one("move-mode.png", stg, 960);
+            }
             Snap.Save(new CrashNotice(System.IO.Path.Combine(Crash.Dir, "2026-11-19 20-14-03.txt")), System.IO.Path.Combine(dir, "crash-notice.png"), 470, 0);
             S.Row = false; x.MicMuted = false;
             var w2 = new Window { Background = Brushes.Transparent, Content = Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)), FontFamily = new FontFamily("Segoe UI") };

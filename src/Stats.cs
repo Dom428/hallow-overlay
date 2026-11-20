@@ -17,7 +17,12 @@ namespace HallowOverlay
     [DataContract]
     public class OverlaySettings
     {
-        [DataMember] public string Corner = "tl";        // tl, tr, bl, br
+        [DataMember] public string Corner = "tl";        // 1.0-1.14: tl, tr, bl, br (still written: the corner nearest the spot)
+        // 1.15 spot: one of 9 (tl tc tr ml mc mr bl bc br), the edge offset (1/96 inch), a dragged offset (fraction of the screen) and the screen
+        [DataMember] public string Anchor = "tl";
+        [DataMember] public double Margin = Placement.DefaultMargin, OffX = 0, OffY = 0;
+        [DataMember] public string Screen = "", ScreenId = "", ScreenName = "";   // device name (\\.\DISPLAY2), monitor id, its name then ("" = main screen)
+        [DataMember] public bool OwnSpot = false;        // a game's own look: its own spot (false = "use my usual spot")
         [DataMember] public double Scale = 1;
         [DataMember] public double Opacity = 0.85;
         [DataMember] public bool Row = true;             // one line (true) or a column
@@ -50,7 +55,7 @@ namespace HallowOverlay
         [DataMember(EmitDefaultValue = false)] public Dictionary<string, OverlaySettings> PerGame = new Dictionary<string, OverlaySettings>();
         [OnDeserializing] void D(StreamingContext c)
         {
-            Corner = "tl"; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; Hotkeys = null; TrayOnClose = true;
+            Corner = "tl"; Anchor = null; Margin = Placement.DefaultMargin; OffX = OffY = 0; Screen = ScreenId = ScreenName = ""; OwnSpot = false; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; Hotkeys = null; TrayOnClose = true;
             OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
             GpuClocks = GpuPower = Vram = FrameGraph = false; Styles = null; TextSize = "m"; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; LastCrashShown = ""; AutoUpdate = true; LastUpdateCheck = ""; ToldUpdate = ""; Fps01 = false; LogCsv = false; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
         }
@@ -61,7 +66,7 @@ namespace HallowOverlay
         }
 
         // A copy of the look for a game's own settings (no global lists inside).
-        public OverlaySettings LookCopy() { var l = (OverlaySettings)MemberwiseClone(); l.PerGame = null; l.Hotkeys = null; l.OffGames = new List<string>(); l.Styles = Styles == null ? null : Styles.Select(x => x.Copy()).ToList(); return l; }
+        public OverlaySettings LookCopy() { var l = (OverlaySettings)MemberwiseClone(); l.PerGame = null; l.OwnSpot = false; l.Hotkeys = null; l.OffGames = new List<string>(); l.Styles = Styles == null ? null : Styles.Select(x => x.Copy()).ToList(); return l; }
         // The settings a game's own look is stored under (case-insensitive), or null.
         public string PerGameKey(string game)
         {
@@ -73,14 +78,16 @@ namespace HallowOverlay
         public OverlaySettings LookFor(string game)
         {
             var k = PerGameKey(game); if (k == null) return this;
-            var l = PerGame[k].LookCopy(); l.HotGpu = HotGpu; l.HighPing = HighPing; l.RamFull = RamFull; return l;
+            var own = PerGame[k].OwnSpot; var l = PerGame[k].LookCopy(); l.HotGpu = HotGpu; l.HighPing = HighPing; l.RamFull = RamFull;
+            if (own) l.OwnSpot = true; else Placement.CopySpot(this, l);   // "use my usual spot"
+            return l;
         }
         public static string Dir { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HallowOverlay"); } }
         static string FilePath { get { return Path.Combine(Dir, "overlay.json"); } }
         public static bool Frozen;
         public static OverlaySettings Load()
         {
-            try { if (File.Exists(FilePath)) using (var f = File.OpenRead(FilePath)) { var s = (OverlaySettings)new DataContractJsonSerializer(typeof(OverlaySettings)).ReadObject(f); if (s != null) { if (s.PerGame == null) s.PerGame = new Dictionary<string, OverlaySettings>(); return s; } } } catch { }
+            try { if (File.Exists(FilePath)) using (var f = File.OpenRead(FilePath)) { var s = (OverlaySettings)new DataContractJsonSerializer(typeof(OverlaySettings)).ReadObject(f); if (s != null) { if (s.PerGame == null) s.PerGame = new Dictionary<string, OverlaySettings>(); Placement.Migrate(s); return s; } } } catch { }
             return new OverlaySettings();
         }
         public void Save()
