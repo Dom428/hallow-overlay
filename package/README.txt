@@ -5,6 +5,9 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.17
+- "Move it" right after Overlay starts (before any game) works now - the panel could stay click-through, so it couldn't be dragged.
+
 WHAT'S NEW IN 1.16
 - Dragging the panel in "Move it" mode works reliably now, and you can drag the "Drag me" card too.
 - After moving, the panel stays in view for a moment so you see where it went.

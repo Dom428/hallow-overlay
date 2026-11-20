@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.17", new[] { "\"Move it\" right after Overlay starts (before any game) works now - the panel could stay click-through, so it couldn't be dragged" }),
             Tuple.Create("1.16", new[] { "Dragging the panel in \"Move it\" mode works reliably now - and you can drag the \"Drag me\" card too", "After you finish moving, the panel stays in view for a moment so you see where it went" }),
             Tuple.Create("1.15", new[] { "Put it anywhere: 9 spots (top / middle / bottom, left / centre / right), any screen, and an edge offset slider", "Move it: drag the panel where you want it (it snaps to the spots and the screen's edges and centre lines; arrow keys nudge) - from the settings, the tray menu or an optional hotkey", "A game can have its own spot, or use your usual one" }),
             Tuple.Create("1.14", new[] { "Your own hotkeys: change any of them in the settings (click the box, press the keys), turn one off, or reset to the defaults", "If another app already owns a combo you're told so and the old one keeps working; new optional hotkeys for \"Only when something's wrong\" and opening the settings" }),

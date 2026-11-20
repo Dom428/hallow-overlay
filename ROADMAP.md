@@ -21,6 +21,7 @@
 | **1.14** | Your own hotkeys: every hotkey (show / hide, benchmark, plus new optional only-when-wrong and open settings) rebindable with a press-the-keys box, Off per hotkey, Reset to defaults; refuses its own duplicates and combos another app owns (keeps the old one) |
 | **1.15** | Put it anywhere: 9 spots, any screen (by monitor id, main screen while it's missing), edge offset slider; Move it mode (settings, tray / Hallow menu `invoke move`, optional hotkey) with snapping to spots / edges / centre lines, arrow-key nudges, click-through restored on Enter / Esc / Done / focus loss / 2 min; saved as spot + offset share of the screen (survives resolution / DPI); own spot per game or "use my usual spot"; Reset position; `position` in status.json |
 | **1.16** | Dragging fixed: move mode handles the panel's own mouse messages (press / move with capture / release) instead of WPF's DragMove; the "Drag me" card drags the panel too; "Saved here" flash after moving; status position predicted while hidden |
+| **1.17** | Move it fixed for real: move mode started before the panel was ever shown (no game since start) left the new window click-through; the window is created first and the styles re-checked every second |
 
 ## Next
 

@@ -41,7 +41,7 @@ namespace HallowOverlay
         {
             WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = false; ShowActivated = false;
             SizeToContent = SizeToContent.WidthAndHeight; ResizeMode = ResizeMode.NoResize; Focusable = false; FontFamily = new FontFamily("Segoe UI"); IsHitTestVisible = false;
-            SourceInitialized += (s, e) => { hwnd = new WindowInteropHelper(this).Handle; SetClickThrough(true); HwndSource.FromHwnd(hwnd).AddHook(Hook); };
+            SourceInitialized += (s, e) => { hwnd = new WindowInteropHelper(this).Handle; SetClickThrough(!Moving); HwndSource.FromHwnd(hwnd).AddHook(Hook); };   // 1.16: a window first created in move mode isn't click-through
             PreviewKeyDown += OnKey;
         }
         public IntPtr Handle { get { return hwnd; } }
@@ -75,9 +75,9 @@ namespace HallowOverlay
             ex = on ? ex | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE : ex & ~(WS_EX_TRANSPARENT | WS_EX_NOACTIVATE);
             SetWindowLong(hwnd, -20, ex);
         }
-        public bool IsClickThrough { get { if (hwnd == IntPtr.Zero) return true; int ex = GetWindowLong(hwnd, -20); return (ex & WS_EX_TRANSPARENT) != 0 && (ex & WS_EX_NOACTIVATE) != 0; } }
+        public bool IsClickThrough { get { if (hwnd == IntPtr.Zero) return !Moving; int ex = GetWindowLong(hwnd, -20); return (ex & WS_EX_TRANSPARENT) != 0 && (ex & WS_EX_NOACTIVATE) != 0; } }
         // Called every refresh: outside move mode the window is click-through, whatever happened.
-        public void EnsureClickThrough() { if (!Moving && !IsClickThrough) { SetClickThrough(true); IsHitTestVisible = false; } }
+        public void EnsureClickThrough() { if (!Moving && !IsClickThrough) { SetClickThrough(true); IsHitTestVisible = false; } else if (Moving && hwnd != IntPtr.Zero && IsClickThrough) SetClickThrough(false); }
 
         // ---- content
         public void SetPanel(UIElement content)
@@ -147,6 +147,7 @@ namespace HallowOverlay
             if (!Moving)
             {
                 Moving = true; LastGuide = "";
+                new WindowInteropHelper(this).EnsureHandle();   // 1.15 bug: before the panel was ever shown there was no window yet, so the styles stayed click-through
                 SetClickThrough(false); IsHitTestVisible = true; Focusable = true;
                 ShowPanel();
                 if (hint == null) { hint = new MoveHint(); hint.Done = () => EndMove("done"); hint.Owner2 = this; }
