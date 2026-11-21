@@ -57,6 +57,8 @@ namespace HallowOverlay
             return (l + 0.05) / 0.056 >= 1.05 / (l + 0.05) ? "#1A0E04" : "#FFFFFF";   // whichever contrasts more (WCAG)
         }
         public static SolidColorBrush Brush() { return new SolidColorBrush(C(Hex)); }
+        // 1.20: the accent for text and thin lines in the settings windows - darkened in light mode so it stays readable
+        public static SolidColorBrush Ink() { return new SolidColorBrush(C(Look.IsLight ? Look.TextAccent(Hex) : Hex)); }
 
         // Theme.xaml with the accent in place of Overlay's orange
         public static string Themed(string xaml, string hex)
@@ -168,9 +170,9 @@ namespace HallowOverlay
         {
             Title = "Hallow Overlay"; Width = 470; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize;
             Background = (Brush)FindResource("Bg"); Foreground = (Brush)FindResource("Text"); FontFamily = new FontFamily("Segoe UI"); FontSize = 12.5;
-            WindowStartupLocation = WindowStartupLocation.CenterScreen; ShowActivated = false;
+            WindowStartupLocation = WindowStartupLocation.CenterScreen; ShowActivated = false; Look.Track(this);
             var sp = new StackPanel { Margin = new Thickness(24, 20, 24, 18) };
-            sp.Children.Add(new TextBlock { Text = "Hallow Overlay closed unexpectedly last time", FontSize = 16, FontWeight = FontWeights.Bold, Foreground = Accent.Brush(), TextWrapping = TextWrapping.Wrap });
+            sp.Children.Add(new TextBlock { Text = "Hallow Overlay closed unexpectedly last time", FontSize = 16, FontWeight = FontWeights.Bold, Foreground = Accent.Ink(), TextWrapping = TextWrapping.Wrap });
             sp.Children.Add(new TextBlock { Text = "A crash report was saved on this PC (" + Path.GetFileName(file) + "). It only holds the error, and nothing is sent anywhere.", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 8, 0, 16) });
             var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var show = new Button { Content = "Show details", Style = (Style)FindResource("Btn"), Margin = new Thickness(0, 0, 8, 0) };

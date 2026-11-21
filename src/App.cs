@@ -22,14 +22,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.19.0.0")]
-[assembly: AssemblyFileVersion("1.19.0.0")]
+[assembly: AssemblyVersion("1.20.0.0")]
+[assembly: AssemblyFileVersion("1.20.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.19";
+        public const string Version = "1.20";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -47,7 +47,7 @@ namespace HallowOverlay
             int si = Array.IndexOf(args, "--snap");
             if (si >= 0 && si + 1 < args.Length)
             {
-                Snap.On = true; OverlaySettings.Frozen = true; Accent.Hex = Accent.Pick(OverlaySettings.Load().UseHallowAccent);
+                Snap.On = true; OverlaySettings.Frozen = true; Accent.Hex = Accent.Pick(OverlaySettings.Load().UseHallowAccent); Look.IsLight = Look.Resolve(OverlaySettings.Load().ColorMode, Accent.FilePath);
                 var sa = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown }; LoadTheme(sa);
                 new MainWindow(true).SnapAll(args[si + 1]); return 0;
             }
@@ -57,7 +57,7 @@ namespace HallowOverlay
             if (!created) { showEvent.Set(); return 0; }
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             Crash.Install(app);
-            Accent.Hex = Accent.Pick(OverlaySettings.Load().UseHallowAccent); LoadTheme(app);
+            Accent.Hex = Accent.Pick(OverlaySettings.Load().UseHallowAccent); Look.IsLight = Look.Resolve(OverlaySettings.Load().ColorMode, Accent.FilePath); LoadTheme(app);
             var w = new MainWindow(args.Contains("--tray"));
             new Thread(() => { while (showEvent.WaitOne()) w.Dispatcher.BeginInvoke(new Action(w.ShowFromTray)); }) { IsBackground = true }.Start();
             app.Run();
@@ -70,7 +70,7 @@ namespace HallowOverlay
             string xaml;
             using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("HallowOverlay.Theme.xaml")) using (var r = new System.IO.StreamReader(s)) xaml = r.ReadToEnd();
             app.Resources.MergedDictionaries.Clear();
-            app.Resources.MergedDictionaries.Add((ResourceDictionary)XamlReader.Parse(Accent.Themed(xaml, Accent.Hex)));
+            app.Resources.MergedDictionaries.Add((ResourceDictionary)XamlReader.Parse(Pal.Theme(xaml, Accent.Hex, Look.IsLight)));
         }
     }
 
@@ -217,8 +217,7 @@ namespace HallowOverlay
 
     public class MainWindow : Window
     {
-        [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int val, int size);
-        static SolidColorBrush B(string hex) { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
+        static SolidColorBrush B(string hex) { return Pal.B(hex); }   // 1.20: light mode swaps the colours
 
         readonly OverlaySettings S = OverlaySettings.Load();
         readonly Sampler sampler = new Sampler();
@@ -244,7 +243,7 @@ namespace HallowOverlay
             if (S.Hotkeys == null) S.Hotkeys = new Dictionary<string, string>();
             keys = new HotkeySet(IntPtr.Zero, S.Hotkeys);   // names only; the registered one replaces it below (never in --snap)
             Content = Build();
-            SourceInitialized += (s, e) => { int dark = 1; DwmSetWindowAttribute(new WindowInteropHelper(this).Handle, 20, ref dark, 4); };
+            Look.Track(this);   // 1.20: the title bar follows light / dark
             Closing += (s, e) =>
             {
                 if (!exiting && S.TrayOnClose && !Snap.On)
@@ -273,6 +272,7 @@ namespace HallowOverlay
             msgTimer = new DispatcherTimer(); msgTimer.Tick += (s, e) => { msgTimer.Stop(); Refresh(); };
             Link.Serve(Dispatcher, OnCommand);
             Accent.Watch(Dispatcher, ApplyAccent);
+            Look.WatchSystem(Dispatcher, ApplyAccent);   // 1.20: "Same as Windows" follows Windows' light / dark setting
             if (!testCopy) { DateTime lc; if (S.AutoUpdate && (!DateTime.TryParse(S.LastUpdateCheck, out lc) || (DateTime.Now - lc).TotalHours > 20)) CheckForUpdate(false); }
             var daily = new DispatcherTimer { Interval = TimeSpan.FromHours(6) }; daily.Tick += (s, e) => { DateTime lc; if (!testCopy && S.AutoUpdate && (!DateTime.TryParse(S.LastUpdateCheck, out lc) || (DateTime.Now - lc).TotalHours > 20)) CheckForUpdate(false); }; daily.Start();
             if (!testCopy) Dispatcher.BeginInvoke(new Action(CheckCrash), DispatcherPriority.ApplicationIdle);
@@ -285,10 +285,33 @@ namespace HallowOverlay
         // ---- Hallow accent: re-theme the open windows when theme.json or the setting changes
         void ApplyAccent()
         {
-            var hex = Accent.Pick(S.UseHallowAccent); if (hex == Accent.Hex) return;
-            Accent.Hex = hex; Program.LoadTheme(Application.Current);
-            Content = Build(); Refresh();
+            var hex = Accent.Pick(S.UseHallowAccent); var light = Look.Resolve(S.ColorMode, Accent.FilePath);
+            if (hex == Accent.Hex && light == Look.IsLight) return;
+            Accent.Hex = hex; Look.IsLight = light; Program.LoadTheme(Application.Current);
+            Background = (Brush)FindResource("Bg"); Foreground = (Brush)FindResource("Text");
+            var sv = Content as ScrollViewer; var off = sv != null ? sv.VerticalOffset : 0;
+            Content = Build(); Refresh(); sv = Content as ScrollViewer; if (sv != null) sv.ScrollToVerticalOffset(off);
             if (histWin != null && histWin.IsLoaded) histWin.Rebuild();
+            if (layoutWin != null && layoutWin.IsLoaded) layoutWin.Rebuild();
+            Look.TitleBars();
+        }
+
+        // ---- 1.20: the look of these settings windows (the in-game panel always stays dark)
+        FrameworkElement LookRow()
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 6, 0, 4) };
+            var lbl = new TextBlock { Text = "Look", Width = 120, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold }; DockPanel.SetDock(lbl, Dock.Left); row.Children.Add(lbl);
+            var wp = new WrapPanel();
+            foreach (var o in new[] { Tuple.Create(Look.Follow, "Follow Hallow"), Tuple.Create(Look.Light, "Light"), Tuple.Create(Look.Dark, "Dark") })
+            {
+                var key = o.Item1; var c = new ToggleButton { Content = o.Item2, Style = (Style)FindResource("Chip"), Margin = new Thickness(0, 0, 6, 0), Padding = new Thickness(12, 5, 12, 5), IsChecked = Look.Normalize(S.ColorMode) == key };
+                c.Click += (s, e) => { S.ColorMode = key; S.Save(); foreach (ToggleButton x in wp.Children) x.IsChecked = x == c; Dispatcher.BeginInvoke(new Action(ApplyAccent)); };
+                wp.Children.Add(c);
+            }
+            row.Children.Add(wp);
+            var sp = new StackPanel(); sp.Children.Add(row);
+            sp.Children.Add(new TextBlock { Text = "For these settings windows. Follow Hallow uses the Light / Dark / Same as Windows choice in Hallow Toolkit. The in-game panel always stays dark (it's see-through over games).", Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) });
+            return sp;
         }
 
         // ---- crash notice: once per crash report, when the window is shown (a tray message first if it starts hidden)
@@ -399,7 +422,7 @@ namespace HallowOverlay
             var cmd = (sp < 0 ? line : line.Substring(0, sp)).ToLowerInvariant(); var arg = sp < 0 ? "" : line.Substring(sp + 1).Trim();
             switch (cmd)
             {
-                case "ping": return "ok " + Link.Json(new Dictionary<string, object> { { "app", "Overlay" }, { "version", Program.Version } });
+                case "ping": return "ok " + Link.Json(new Dictionary<string, object> { { "app", "Overlay" }, { "version", Program.Version }, { "look", Look.IsLight ? "light" : "dark" } });
                 case "status": return "ok " + StatusJson();
                 case "show": shown = true; Refresh(); return "ok";
                 case "hide": shown = false; Refresh(); return "ok";
@@ -735,7 +758,7 @@ namespace HallowOverlay
             var sp = new StackPanel { Margin = new Thickness(26, 16, 26, 20) };
             var title = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
             try { title.Children.Add(new Image { Source = AppIcon(), Width = 30, Height = 30, Margin = new Thickness(0, 0, 10, 0) }); } catch { }
-            title.Children.Add(new TextBlock { Text = "HALLOW", FontSize = 22, FontWeight = FontWeights.Bold, Foreground = Accent.Brush(), VerticalAlignment = VerticalAlignment.Center });
+            title.Children.Add(new TextBlock { Text = "HALLOW", FontSize = 22, FontWeight = FontWeights.Bold, Foreground = Accent.Ink(), VerticalAlignment = VerticalAlignment.Center });
             title.Children.Add(new TextBlock { Text = " OVERLAY", FontSize = 22, FontWeight = FontWeights.Light, VerticalAlignment = VerticalAlignment.Center });
             sp.Children.Add(title);
             // preview on a fake game background
@@ -792,7 +815,7 @@ namespace HallowOverlay
             var hide = new CheckBox { Content = "Hide the server's IP address (for streaming) - only its region is shown", IsChecked = S.HideServerIp, Style = (Style)FindResource("Switch") };
             hide.Click += (s, e) => { S.HideServerIp = hide.IsChecked == true; S.Save(); Refresh(); };
             sp.Children.Add(hide);
-            updateRow = new Border { Background = B("#2A2236"), BorderBrush = Accent.Brush(), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 10, 14, 10), Margin = new Thickness(0, 14, 0, 0), Visibility = Visibility.Collapsed };
+            updateRow = new Border { Background = B("#2A2236"), BorderBrush = Accent.Ink(), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 10, 14, 10), Margin = new Thickness(0, 14, 0, 0), Visibility = Visibility.Collapsed };
             var ur = new DockPanel(); updateBtn = new Button { Style = (Style)FindResource("Accent"), MinWidth = 120 }; DockPanel.SetDock(updateBtn, Dock.Right);
             updateBtn.Click += (s, e) => InstallUpdate(); ur.Children.Add(updateBtn);
             updateText = new TextBlock { TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) }; ur.Children.Add(updateText);
@@ -817,6 +840,7 @@ namespace HallowOverlay
             sw2("Log every stat to a CSV file once a second while you play (Documents\\Hallow Overlay\\Logs)", S.LogCsv, v => S.LogCsv = v);
             sw2("Look for updates once a day (it always asks before installing)", S.AutoUpdate, v => S.AutoUpdate = v);
             sw2("Use the Hallow accent: the colour picked in Hallow Toolkit (warnings stay red and amber)", S.UseHallowAccent, v => { S.UseHallowAccent = v; Dispatcher.BeginInvoke(new Action(ApplyAccent)); });
+            more.Children.Add(LookRow());
             sw2("Use the Hallow icon: when Hallow Hub is running, its one tray icon has Overlay's menu (Overlay's own icon hides)", S.UseHallowIcon, v => { S.UseHallowIcon = v; hub.CheckNow(); });
             sw2("Start with Windows (in the tray)", StartsWithWindows(), v => SetStartWithWindows(v));
             sp.Children.Add(more);

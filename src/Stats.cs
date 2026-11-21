@@ -47,6 +47,7 @@ namespace HallowOverlay
         [DataMember] public bool Fps01 = false;
         [DataMember] public bool LogCsv = false;         // every stat once a second to Documents\Hallow Overlay\Logs while a game runs          // 0.1% low next to FPS
         [DataMember] public bool UseHallowAccent = true; // the accent colour picked in Hallow Toolkit
+        [DataMember] public string ColorMode = "follow"; // 1.20: the settings windows' look - "follow" (Hallow Toolkit's light / dark), "light" or "dark"
         [DataMember] public string LastCrashShown = ""; // the crash report the notice was shown for
         [DataMember] public bool UseHallowIcon = true;   // let Hallow Hub show one tray icon for all Hallow apps
         [DataMember] public bool HideServerIp = true;    // show the region, never the server's IP (for streaming)
@@ -57,7 +58,7 @@ namespace HallowOverlay
         {
             Corner = "tl"; Anchor = null; Margin = Placement.DefaultMargin; OffX = OffY = 0; Screen = ScreenId = ScreenName = ""; OwnSpot = false; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; Hotkeys = null; TrayOnClose = true;
             OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
-            GpuClocks = GpuPower = Vram = FrameGraph = false; Styles = null; TextSize = "m"; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; LastCrashShown = ""; AutoUpdate = true; LastUpdateCheck = ""; ToldUpdate = ""; Fps01 = false; LogCsv = false; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
+            GpuClocks = GpuPower = Vram = FrameGraph = false; Styles = null; TextSize = "m"; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; ColorMode = "follow"; LastCrashShown = ""; AutoUpdate = true; LastUpdateCheck = ""; ToldUpdate = ""; Fps01 = false; LogCsv = false; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
         }
         [OnDeserialized] void Fix(StreamingContext c)
         {

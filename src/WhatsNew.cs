@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.20", new[] { "Light and dark mode for the settings windows: they follow the Light / Dark / Same as Windows choice in Hallow Toolkit, live", "Your own choice in Settings > Look: Follow Hallow, Light or Dark", "The in-game panel stays as it is - see-through and dark over your games" }),
             Tuple.Create("1.19", new[] { "The overlay remembers where you put it: after a restart or in a game it comes back to the same place (a panel put somewhere free keeps the edges nearest the screen's edges where you put them)", "Every move is saved straight away - a drag, the arrow keys, Done / Enter, and also when move mode ends by itself in the middle of a drag", "After a move it says where it went: \"Saved for <game>\" (a game with its own spot) or \"Saved as your usual spot\"" }),
             Tuple.Create("1.18", new[] { "Now playing works without Hallow Mixer: the song or video comes straight from Windows (Spotify, YouTube in a browser, any media app) - with Mixer running it still comes from Mixer" }),
             Tuple.Create("1.17", new[] { "\"Move it\" right after Overlay starts (before any game) works now - the panel could stay click-through, so it couldn't be dragged" }),
@@ -46,21 +47,21 @@ namespace HallowOverlay
 
     public class WhatsNewWindow : Window
     {
-        static SolidColorBrush B(string hex) { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
+        static SolidColorBrush B(string hex) { return Pal.B(hex); }   // 1.20: light mode swaps the colours
         public WhatsNewWindow(List<Tuple<string, string[]>> items)
         {
             Title = "What's new in Hallow Overlay"; Width = 560; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize;
             Background = (Brush)FindResource("Bg"); Foreground = (Brush)FindResource("Text");
-            FontFamily = new FontFamily("Segoe UI"); FontSize = 12.5; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            FontFamily = new FontFamily("Segoe UI"); FontSize = 12.5; WindowStartupLocation = WindowStartupLocation.CenterOwner; Look.Track(this);
             var sp = new StackPanel { Margin = new Thickness(26, 20, 26, 20) };
-            sp.Children.Add(new TextBlock { Text = "What's new in Hallow Overlay " + Program.Version, FontSize = 20, FontWeight = FontWeights.Bold, Foreground = Accent.Brush(), Margin = new Thickness(0, 0, 0, 12) });
+            sp.Children.Add(new TextBlock { Text = "What's new in Hallow Overlay " + Program.Version, FontSize = 20, FontWeight = FontWeights.Bold, Foreground = Accent.Ink(), Margin = new Thickness(0, 0, 0, 12) });
             foreach (var v in items)
             {
                 sp.Children.Add(new TextBlock { Text = v.Item1, FontWeight = FontWeights.Bold, Foreground = B("#A98BE0"), Margin = new Thickness(0, 6, 0, 3) });
                 foreach (var line in v.Item2)
                 {
                     var d = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
-                    var dot = new TextBlock { Text = "•", Foreground = Accent.Brush(), Width = 16, FontWeight = FontWeights.Bold }; DockPanel.SetDock(dot, Dock.Left);
+                    var dot = new TextBlock { Text = "•", Foreground = Accent.Ink(), Width = 16, FontWeight = FontWeights.Bold }; DockPanel.SetDock(dot, Dock.Left);
                     d.Children.Add(dot); d.Children.Add(new TextBlock { Text = line, TextWrapping = TextWrapping.Wrap });
                     sp.Children.Add(d);
                 }

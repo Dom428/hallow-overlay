@@ -5,6 +5,11 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.20
+- Light and dark mode for the settings windows: they follow the Light / Dark / Same as Windows
+  choice in Hallow Toolkit (live), or your own choice in Settings > Look (Follow Hallow / Light / Dark).
+- The in-game panel stays as it is - dark and see-through over your games.
+
 WHAT'S NEW IN 1.19
 - The overlay remembers where you put it: after a restart, in a game or after a resolution change
   it comes back to the same place (it keeps the edges nearest the screen's edges where you put them).

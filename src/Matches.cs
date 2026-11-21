@@ -144,14 +144,14 @@ namespace HallowOverlay
     // Match history: the list (filter by game) with the details of the one picked, or the "Servers" view.
     public class MatchHistoryWindow : Window
     {
-        static SolidColorBrush B(string hex) { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
+        static SolidColorBrush B(string hex) { return Pal.B(hex); }   // 1.20: light mode swaps the colours
         readonly List<GameMatch> all; readonly bool hideIp;
         string filter; bool serversView; GameMatch picked;
         ComboBox games; Border body; ToggleButton cm, cs;
 
         public MatchHistoryWindow(List<GameMatch> matches, bool hideServerIp)
         {
-            all = matches; hideIp = hideServerIp; BuildUi();
+            all = matches; hideIp = hideServerIp; BuildUi(); Look.Track(this);
         }
         public void Rebuild() { BuildUi(); }   // after the accent colour changed
         void BuildUi()
@@ -161,7 +161,7 @@ namespace HallowOverlay
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             var dock = new DockPanel { Margin = new Thickness(22, 16, 22, 18) };
             var top = new DockPanel { Margin = new Thickness(0, 0, 0, 12) }; DockPanel.SetDock(top, Dock.Top);
-            top.Children.Add(new TextBlock { Text = "Match history", FontSize = 20, FontWeight = FontWeights.Bold, Foreground = Accent.Brush(), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 18, 0) });
+            top.Children.Add(new TextBlock { Text = "Match history", FontSize = 20, FontWeight = FontWeights.Bold, Foreground = Accent.Ink(), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 18, 0) });
             DockPanel.SetDock(top.Children[0], Dock.Left);
             var chips = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             cm = new ToggleButton { Content = "Matches", Style = (Style)FindResource("Chip"), Padding = new Thickness(12, 5, 12, 5), Margin = new Thickness(0, 0, 6, 0), IsChecked = true };
@@ -198,7 +198,7 @@ namespace HallowOverlay
             foreach (var m in list)
             {
                 var mm = m; bool sel = m == picked;
-                var b = new Border { Background = sel ? B("#2E2440") : B("#1C1724"), BorderBrush = sel ? (Brush)Accent.Brush() : B("#2C2536"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 6), Cursor = Cursors.Hand };
+                var b = new Border { Background = sel ? B("#2E2440") : B("#1C1724"), BorderBrush = sel ? (Brush)Accent.Ink() : B("#2C2536"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 8, 6), Cursor = Cursors.Hand };
                 var sp = new StackPanel();
                 var head = new DockPanel();
                 var when = new TextBlock { Text = m.End.ToString("ddd d MMM, HH:mm", CultureInfo.CurrentCulture), Foreground = (Brush)FindResource("Muted"), FontSize = 11.5 }; DockPanel.SetDock(when, Dock.Right); head.Children.Add(when);

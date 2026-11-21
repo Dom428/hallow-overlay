@@ -88,20 +88,25 @@ namespace HallowOverlay
 
     public class LayoutWindow : Window
     {
-        static SolidColorBrush B(string hex) { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
+        static SolidColorBrush B(string hex) { return Pal.B(hex); }   // 1.20: light mode swaps the colours
         readonly OverlaySettings look; readonly Action changed; readonly string forWhat;
         StackPanel rows;
 
         public LayoutWindow(OverlaySettings lookToEdit, string what, Action onChange)
         {
             look = lookToEdit; changed = onChange; forWhat = what;
+            BuildUi(); Look.Track(this);
+        }
+        public void Rebuild() { BuildUi(); }   // 1.20: after the accent or light / dark changed
+        void BuildUi()
+        {
             Title = "Layout - Hallow Overlay"; Width = 720; Height = 720; MinWidth = 640; MinHeight = 400;
             Background = (Brush)FindResource("Bg"); Foreground = (Brush)FindResource("Text"); FontFamily = new FontFamily("Segoe UI"); FontSize = 12.5;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             var dock = new DockPanel { Margin = new Thickness(22, 16, 22, 18) };
             var head = new StackPanel(); DockPanel.SetDock(head, Dock.Top);
-            head.Children.Add(new TextBlock { Text = "Layout", FontSize = 20, FontWeight = FontWeights.Bold, Foreground = Accent.Brush() });
-            head.Children.Add(new TextBlock { Text = "For " + what + ". Order, your own label, a colour, and text or text + a small graph of the last minute. Which stats show is set in the settings window; warnings stay amber and red.", Foreground = (Brush)FindResource("Muted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 10) });
+            head.Children.Add(new TextBlock { Text = "Layout", FontSize = 20, FontWeight = FontWeights.Bold, Foreground = Accent.Ink() });
+            head.Children.Add(new TextBlock { Text = "For " + forWhat + ". Order, your own label, a colour, and text or text + a small graph of the last minute. Which stats show is set in the settings window; warnings stay amber and red.", Foreground = (Brush)FindResource("Muted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 10) });
             var ts = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
             ts.Children.Add(new TextBlock { Text = "Text size", FontWeight = FontWeights.SemiBold, Width = 90, VerticalAlignment = VerticalAlignment.Center });
             foreach (var o in new[] { Tuple.Create("s", "Small"), Tuple.Create("m", "Normal"), Tuple.Create("l", "Large"), Tuple.Create("xl", "Extra large") })
@@ -143,7 +148,8 @@ namespace HallowOverlay
                 {
                     var cc = col; bool on = st.Color == cc;
                     var dot = new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(9), Margin = new Thickness(0, 0, 5, 0), Cursor = Cursors.Hand, ToolTip = cc == null ? "Normal colour" : cc,
-                        Background = cc == null ? (Brush)B("#3A3248") : B(cc), BorderThickness = new Thickness(on ? 2 : 1), BorderBrush = on ? Accent.Brush() : B("#55496A") };
+                        Background = cc == null ? (Brush)B("#3A3248") : new SolidColorBrush(Look.C(cc)),   // the panel's real colour, in light mode too
+                        BorderThickness = new Thickness(on ? 2 : 1), BorderBrush = on ? Accent.Ink() : B("#55496A") };
                     if (cc == null) dot.Child = new TextBlock { Text = "A", FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = B("#ECE8F4") };
                     dot.MouseLeftButtonUp += (s, e) => { st.Color = cc; Save(l); Fill(); };
                     sw.Children.Add(dot);
