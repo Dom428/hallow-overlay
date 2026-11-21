@@ -25,6 +25,7 @@
 | **1.18** | Now playing without Hallow Mixer: when Mixer isn't running, the song or video comes straight from Windows' media sessions (what's playing, every 2 s, read only); with Mixer running it still comes from Mixer |
 | **1.19** | Remembers where you put it: a free spot keeps the edges nearest the screen's edges (a centre / right spot measured at the move-mode size came back elsewhere at the normal width); every move saved at once and atomically (drag, nudges, Done / Enter, and a drag still held when move mode ends); "Saved for <game>" / "Saved as your usual spot"; test copies with their own data folder and made-up screens |
 | **1.20** | Light and dark mode for the settings windows: follows `mode` in theme.json (Light / Dark / Same as Windows, live) or Settings > Look (Follow Hallow / Light / Dark); light palette from the family spec, darkened accent for text, title bars match; the in-game panel stays dark and see-through |
+| **1.21** | Light mode readability fixes: filled accent buttons / chips use the family light fill (violet had dark text at 4.47:1 -> #8452F5 with white text), slider tracks use the darkened accent; light contrast test for every pair the settings windows use |
 
 ## Next
 

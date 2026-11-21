@@ -22,14 +22,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.20.0.0")]
-[assembly: AssemblyFileVersion("1.20.0.0")]
+[assembly: AssemblyVersion("1.21.0.0")]
+[assembly: AssemblyFileVersion("1.21.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.20";
+        public const string Version = "1.21";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -896,7 +896,7 @@ namespace HallowOverlay
                 () => T.Scale < 0.95 ? "0.85" : T.Scale > 1.1 ? "1.25" : "1", v => T.Scale = double.Parse(v, System.Globalization.CultureInfo.InvariantCulture)));
             var op = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
             op.Children.Add(new TextBlock { Text = "Background", Width = 120, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold }); DockPanel.SetDock(op.Children[0], Dock.Left);
-            var sl = new Slider { Style = (Style)FindResource("HFader"), Minimum = 0.2, Maximum = 1, Value = T.Opacity, Foreground = Accent.Brush(), VerticalAlignment = VerticalAlignment.Center, Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
+            var sl = new Slider { Style = (Style)FindResource("HFader"), Minimum = 0.2, Maximum = 1, Value = T.Opacity, Foreground = Accent.Ink(), VerticalAlignment = VerticalAlignment.Center, Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
             sl.ValueChanged += (s, e) => { T.Opacity = Math.Round(sl.Value, 2); S.Save(); Refresh(); };
             op.Children.Add(sl); lookHost.Children.Add(op);
             lookHost.Children.Add(new TextBlock { Text = "Show", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 6) });
@@ -1007,7 +1007,7 @@ namespace HallowOverlay
             side.Children.Add(scr);
             var mt = new TextBlock { Text = "Edge offset: " + P.Margin.ToString("0") + " px", Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, Margin = new Thickness(0, 8, 0, 3) };
             side.Children.Add(mt);
-            var ms = new Slider { Style = (Style)FindResource("HFader"), Minimum = 0, Maximum = 80, Value = P.Margin, Foreground = Accent.Brush(), Width = 260, HorizontalAlignment = HorizontalAlignment.Left, SmallChange = 1, LargeChange = 10, IsSnapToTickEnabled = true, TickFrequency = 1, ToolTip = "Space between the panel and the screen's edge" };
+            var ms = new Slider { Style = (Style)FindResource("HFader"), Minimum = 0, Maximum = 80, Value = P.Margin, Foreground = Accent.Ink(), Width = 260, HorizontalAlignment = HorizontalAlignment.Left, SmallChange = 1, LargeChange = 10, IsSnapToTickEnabled = true, TickFrequency = 1, ToolTip = "Space between the panel and the screen's edge" };
             ms.ValueChanged += (s, e) => { P.Margin = Math.Round(ms.Value); mt.Text = "Edge offset: " + P.Margin.ToString("0") + " px"; S.Save(); UpdatePosText(); Refresh(); };
             side.Children.Add(ms);
             top.Children.Add(side);

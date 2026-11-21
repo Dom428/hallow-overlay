@@ -5,6 +5,11 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.21
+- Light mode readability fixes: buttons and selected options in your accent colour always have
+  readable text (a violet accent had dark text that was a little too faint), and the sliders use
+  the darker accent so they stand out on the light background.
+
 WHAT'S NEW IN 1.20
 - Light and dark mode for the settings windows: they follow the Light / Dark / Same as Windows
   choice in Hallow Toolkit (live), or your own choice in Settings > Look (Follow Hallow / Light / Dark).

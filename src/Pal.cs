@@ -53,6 +53,11 @@ namespace HallowOverlay
                            .Replace("Fill=\"#ECE8F4\" Stroke=\"#16121C\" StrokeThickness=\"3\"", "Fill=\"#FFFFFF\" Stroke=\"#8A80A0\" StrokeThickness=\"1.5\"")      // fader knob
                            .Replace("<Setter TargetName=\"k\" Property=\"Fill\" Value=\"#FFFFFF\"/>", "<Setter TargetName=\"k\" Property=\"Fill\" Value=\"#EEEAF5\"/>");
                 xaml = Look.Swap(xaml, Map);
+                // 1.21: filled accent buttons and the "on" chips get the family light fill + its text colour (after the swap, so an accent never gets swapped; violet had dark text at 4.47:1)
+                var fill = Look.LightFill(accent); var fillText = Look.FillText(fill);
+                xaml = xaml.Replace("<Setter Property=\"Background\" Value=\"#F07820\"/>", "<Setter Property=\"Background\" Value=\"" + fill + "\"/>")   // Accent button
+                           .Replace("<SolidColorBrush x:Key=\"CheckedBg\" Color=\"#F07820\"/>", "<SolidColorBrush x:Key=\"CheckedBg\" Color=\"" + fill + "\"/>")   // chip on
+                           .Replace("Value=\"#1A0E04\"", "Value=\"" + fillText + "\"");
             }
             return Accent.Themed(xaml, accent);
         }

@@ -87,6 +87,33 @@ namespace HallowOverlay
             while ((Contrast(cur, LPanel) < 4.5 || Contrast(cur, LBg) < 4.5) && l > 0) { l = Math.Max(0, l - 0.005); cur = H(FromHsl(h, s, l)); }
             return cur;
         }
+        // 1.21: the family accent rule (same as Hallow Toolkit 5.16, HallowFamily.ps1): darken in HSL (System.Drawing hue / saturation /
+        // brightness kept but lightness) 0.01 a step until it reaches min on `on`; unchanged when it already does.
+        public static string Darken(string hex, double min, string on)
+        {
+            if (Contrast(hex, on) >= min) return hex.ToUpperInvariant();
+            var c = C(hex); var d = System.Drawing.Color.FromArgb(c.R, c.G, c.B);
+            double h = d.GetHue() / 360.0, s = d.GetSaturation(), l = d.GetBrightness(); var cur = hex.ToUpperInvariant();
+            while (l > 0)
+            {
+                l = Math.Max(0.0, l - 0.01); cur = H(FromHslRound(h, s, l));
+                if (Contrast(cur, on) >= min) break;
+            }
+            return cur;
+        }
+        static Color FromHslRound(double h, double s, double l)
+        {
+            if (s == 0) { var v = (byte)Math.Round(l * 255); return Color.FromRgb(v, v, v); }
+            double q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+            Func<double, double> f = t => { if (t < 0) t += 1; if (t > 1) t -= 1; if (t < 1 / 6.0) return p + (q - p) * 6 * t; if (t < 0.5) return q; if (t < 2 / 3.0) return p + (q - p) * (2 / 3.0 - t) * 6; return p; };
+            return Color.FromRgb((byte)Math.Round(255 * f(h + 1 / 3.0)), (byte)Math.Round(255 * f(h)), (byte)Math.Round(255 * f(h - 1 / 3.0)));
+        }
+        // text on a filled accent (light mode): whichever of the light text colour / white reads better
+        public static string FillText(string fill) { return Contrast(fill, LText) >= Contrast(fill, "#FFFFFF") ? LText : "#FFFFFF"; }
+        // the light accent FILL (buttons, chips): the real accent, unless neither text colour reaches 4.5:1 on it (violet #8B5CF6) - then
+        // the accent darkened to 4.5:1 on white, with white text
+        public static string LightFill(string accent) { return Contrast(accent, FillText(accent)) >= 4.5 ? accent.ToUpperInvariant() : Darken(accent, 4.5, LPanel); }
+
         static void ToHsl(Color c, out double h, out double s, out double l)
         {
             double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0, mx = Math.Max(r, Math.Max(g, b)), mn = Math.Min(r, Math.Min(g, b));
