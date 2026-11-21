@@ -23,6 +23,7 @@
 | **1.16** | Dragging fixed: move mode handles the panel's own mouse messages (press / move with capture / release) instead of WPF's DragMove; the "Drag me" card drags the panel too; "Saved here" flash after moving; status position predicted while hidden |
 | **1.17** | Move it fixed for real: move mode started before the panel was ever shown (no game since start) left the new window click-through; the window is created first and the styles re-checked every second |
 | **1.18** | Now playing without Hallow Mixer: when Mixer isn't running, the song or video comes straight from Windows' media sessions (what's playing, every 2 s, read only); with Mixer running it still comes from Mixer |
+| **1.19** | Remembers where you put it: a free spot keeps the edges nearest the screen's edges (a centre / right spot measured at the move-mode size came back elsewhere at the normal width); every move saved at once and atomically (drag, nudges, Done / Enter, and a drag still held when move mode ends); "Saved for <game>" / "Saved as your usual spot"; test copies with their own data folder and made-up screens |
 
 ## Next
 
@@ -54,4 +55,4 @@ What MSI Afterburner + RivaTuner Statistics Server, the Xbox Game Bar performanc
 - **Logging to a file** (Afterburner's hardware monitor log) - buildable as CSV -> 1.12
 - **OSD layout editor: order, labels, colours, font size, text or graph per item** (RTSS / Afterburner) - buildable -> 1.13
 - **Your own hotkeys** (Afterburner) - buildable -> 1.14
-- **Put the OSD anywhere: free position, drag to place, any screen** (RTSS / Afterburner, Game Bar widgets) - buildable -> 1.15
+- **Put the OSD anywhere: free position, drag to place, any screen** (RTSS / Afterburner, Game Bar widgets) - buildable -> 1.15 (remembered exactly after restarts and in games: 1.19)

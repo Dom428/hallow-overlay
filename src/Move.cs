@@ -28,6 +28,7 @@ namespace HallowOverlay
         const uint SWP_NOSIZE = 0x1, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10;
 
         IntPtr hwnd; UIElement panel; MoveHint hint; DispatcherTimer moveTimer; bool inDrag;
+        bool unsaved;   // 1.19: moved in move mode since the last Commit (a drag or a nudge that wasn't saved yet)
         public Func<List<ScreenInfo>> ScreensSource = Monitors.All;   // tests put made-up screens here
         public bool Moving { get; private set; }
         public OverlaySettings MoveTarget { get; private set; }        // the look the dragged spot is saved into
@@ -59,7 +60,7 @@ namespace HallowOverlay
         {
             if (!dragging) return;
             var r = new Rect(dragStart.X + screenPt.X - dragFrom.X, dragStart.Y + screenPt.Y - dragFrom.Y, dragStart.Width, dragStart.Height);
-            r = Adjust(r, !NoSnap()); MoveTo(r);
+            r = Adjust(r, !NoSnap()); MoveTo(r); unsaved = true;
         }
         public void EndDrag()
         {
@@ -161,7 +162,10 @@ namespace HallowOverlay
         void Poke() { if (moveTimer == null) return; moveTimer.Stop(); moveTimer.Interval = MoveTimeout; if (Moving) moveTimer.Start(); }
         public void EndMove(string why)
         {
-            bool was = Moving; Moving = false; inDrag = false; if (dragging) { dragging = false; ReleaseCapture(); }
+            // 1.19: a drag still going (or a move not saved yet) when move mode ends - Done, Enter / Esc, focus lost, the 2-minute
+            // timeout, quitting - is saved where it is now. Before, it was dropped and the panel went back to the old spot.
+            if (Moving && (dragging || unsaved)) { dragging = false; Commit(); }
+            bool was = Moving; Moving = false; inDrag = false; if (dragging) { dragging = false; ReleaseCapture(); } else ReleaseOurCapture();
             if (moveTimer != null) moveTimer.Stop();
             if (hint != null && hint.IsVisible) hint.Hide();
             ShowPanel();
@@ -189,7 +193,7 @@ namespace HallowOverlay
             string a; double ox, oy; Placement.FromRect(r, s, MoveTarget.Margin, out a, out ox, out oy);
             MoveTarget.Anchor = a; MoveTarget.Corner = Placement.CornerOf(a); MoveTarget.OffX = ox; MoveTarget.OffY = oy;
             MoveTarget.Screen = s.Primary ? "" : s.Device; MoveTarget.ScreenId = s.Primary ? "" : s.Id; MoveTarget.ScreenName = s.Primary ? "" : s.Name;
-            LastRect = r; LastScreen = s; LastScreenFound = true; PlaceHint(r, s);
+            LastRect = r; LastScreen = s; LastScreenFound = true; PlaceHint(r, s); unsaved = false;
             if (Moved != null) Moved();
         }
         public void Nudge(int dx, int dy)
@@ -211,6 +215,8 @@ namespace HallowOverlay
         }
         [DllImport("user32.dll")] static extern IntPtr SetCapture(IntPtr h);
         [DllImport("user32.dll")] static extern bool ReleaseCapture();
+        [DllImport("user32.dll")] static extern IntPtr GetCapture();
+        void ReleaseOurCapture() { var c = GetCapture(); if (c != IntPtr.Zero && (c == hwnd || (hint != null && c == hint.Handle2))) ReleaseCapture(); }
         // 1.16: the drag runs on the window's own mouse messages (button down, moves with the mouse captured, button up),
         // not WPF's DragMove. The screen point is where the window is now + the message's client point.
         public const int WM_MOUSEMOVE = 0x0200, WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, WM_CAPTURECHANGED = 0x0215;
@@ -233,7 +239,7 @@ namespace HallowOverlay
             if (msg >= WM_MOUSEMOVE && msg <= WM_LBUTTONUP || msg == WM_CAPTURECHANGED) { if (MouseMessage(h, WindowRect(), msg, lp)) { handled = true; return IntPtr.Zero; } }
             switch (msg)
             {
-                case WM_ENTERSIZEMOVE: inDrag = true; Poke(); break;
+                case WM_ENTERSIZEMOVE: inDrag = true; unsaved = true; Poke(); break;
                 case WM_MOVING:
                     {
                         var rc = (RECT)Marshal.PtrToStructure(lp, typeof(RECT));

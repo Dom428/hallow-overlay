@@ -15,7 +15,11 @@ namespace HallowOverlay
 {
     public static class Link
     {
-        public static string PipeName { get { return "HallowFamily.Overlay." + Environment.UserName; } }
+        public static string PipeName { get { return "HallowFamily.Overlay." + Environment.UserName + Suffix; } }
+        // a test copy (HALLOW_OVERLAY_DIR) gets its own pipe and single-instance names, so it never reaches the real Overlay
+        public static string Suffix { get { var d = OverlaySettings.TestDir; if (d == null) return ""; uint h = 2166136261; foreach (var ch in d.ToLowerInvariant()) h = (h ^ ch) * 16777619; return ".Test" + h.ToString("X8"); } }
+        public static string MutexName { get { return @"Local\HallowOverlay" + Suffix; } }
+        public static string ShowEventName { get { return @"Local\HallowOverlayShow" + Suffix; } }
         public static string StatusPath { get { return Path.Combine(OverlaySettings.Dir, "status.json"); } }
 
         // Reads one line (up to \n or the end), giving up after `ms`.
@@ -74,7 +78,7 @@ namespace HallowOverlay
         public static int Send(string line, out string reply)
         {
             reply = null;
-            Mutex m; if (!Mutex.TryOpenExisting(@"Local\HallowOverlay", out m)) { reply = "error Hallow Overlay isn't running"; return 2; }
+            Mutex m; if (!Mutex.TryOpenExisting(MutexName, out m)) { reply = "error Hallow Overlay isn't running"; return 2; }
             m.Dispose();
             try
             {

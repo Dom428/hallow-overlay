@@ -5,6 +5,12 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.19
+- The overlay remembers where you put it: after a restart, in a game or after a resolution change
+  it comes back to the same place (it keeps the edges nearest the screen's edges where you put them).
+- Every move is saved straight away - also when move mode ends by itself in the middle of a drag.
+- After a move it says where it went: "Saved for <game>" or "Saved as your usual spot".
+
 WHAT'S NEW IN 1.18
 - Now playing works without Hallow Mixer: the song or video comes straight from Windows
   (Spotify, YouTube in a browser, any media app). With Mixer running it still comes from Mixer.

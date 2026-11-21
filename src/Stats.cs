@@ -82,18 +82,34 @@ namespace HallowOverlay
             if (own) l.OwnSpot = true; else Placement.CopySpot(this, l);   // "use my usual spot"
             return l;
         }
-        public static string Dir { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HallowOverlay"); } }
-        static string FilePath { get { return Path.Combine(Dir, "overlay.json"); } }
+        // HALLOW_OVERLAY_DIR (developer tests, 1.19): a test copy with its own data folder, pipe and single-instance names
+        public static string TestDir { get { var e = Environment.GetEnvironmentVariable("HALLOW_OVERLAY_DIR"); return string.IsNullOrEmpty(e) ? null : e; } }
+        public static string Dir { get { return TestDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HallowOverlay"); } }
+        public static string FilePath { get { return Path.Combine(Dir, "overlay.json"); } }
         public static bool Frozen;
-        public static OverlaySettings Load()
+        public static OverlaySettings Load() { return Load(FilePath); }
+        public static OverlaySettings Load(string path)
         {
-            try { if (File.Exists(FilePath)) using (var f = File.OpenRead(FilePath)) { var s = (OverlaySettings)new DataContractJsonSerializer(typeof(OverlaySettings)).ReadObject(f); if (s != null) { if (s.PerGame == null) s.PerGame = new Dictionary<string, OverlaySettings>(); Placement.Migrate(s); return s; } } } catch { }
+            try { if (File.Exists(path)) using (var f = File.OpenRead(path)) { var s = (OverlaySettings)new DataContractJsonSerializer(typeof(OverlaySettings)).ReadObject(f); if (s != null) { if (s.PerGame == null) s.PerGame = new Dictionary<string, OverlaySettings>(); Placement.Migrate(s); return s; } } } catch { }
             return new OverlaySettings();
         }
-        public void Save()
+        public bool Save() { return Frozen || Save(FilePath); }
+        // 1.19: atomic - written to overlay.json.tmp, then swapped in, so a crash, a kill or a full disk mid-write never leaves
+        // a cut-off file (which loaded as "no settings" and put the panel back top left). A failed save is retried once.
+        public bool Save(string path)
         {
-            if (Frozen) return;
-            try { Directory.CreateDirectory(Dir); using (var f = File.Create(FilePath)) new DataContractJsonSerializer(typeof(OverlaySettings)).WriteObject(f, this); } catch { }
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(path)); var tmp = path + ".tmp";
+                    using (var f = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None)) { new DataContractJsonSerializer(typeof(OverlaySettings)).WriteObject(f, this); f.Flush(true); }
+                    if (File.Exists(path)) File.Replace(tmp, path, null, true); else File.Move(tmp, path);
+                    return true;
+                }
+                catch { Thread.Sleep(60); }
+            }
+            return false;
         }
     }
 

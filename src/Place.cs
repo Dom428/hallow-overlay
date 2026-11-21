@@ -80,6 +80,12 @@ namespace HallowOverlay
             foreach (var c in "lcr") { var d = Math.Abs(r.X - AX(c, b, r.Width, m)); if (d < best - 1e-9) { best = d; h = c; } }
             best = double.MaxValue;
             foreach (var c in "tmb") { var d = Math.Abs(r.Y - AY(c, b, r.Height, m)); if (d < best - 1e-9) { best = d; v = c; } }
+            // 1.19: a panel put somewhere free (not exactly on a spot) keeps the edges nearest the screen's edges where you put
+            // them. Before, it could hang off a centre or right spot by its middle or right side, measured with the size it had
+            // while you moved it (outlined, every stat, the "Saved" note) - so after a restart or in a game, where it's a different
+            // width, it came back somewhere else. Exactly on a spot (snapped there) it stays that spot.
+            if (Math.Abs(r.X - AX(h, b, r.Width, m)) > 0.5) h = (r.X - b.Left) <= (b.Right - r.Right) ? 'l' : 'r';
+            if (Math.Abs(r.Y - AY(v, b, r.Height, m)) > 0.5) v = (r.Y - b.Top) <= (b.Bottom - r.Bottom) ? 't' : 'b';
             anchor = v.ToString() + h;
             offX = Math.Round((r.X - AX(h, b, r.Width, m)) / b.Width, 6);
             offY = Math.Round((r.Y - AY(v, b, r.Height, m)) / b.Height, 6);
@@ -160,8 +166,27 @@ namespace HallowOverlay
         static bool PerMonitor() { try { return GetAwarenessFromDpiAwarenessContext(GetThreadDpiAwarenessContext()) == 2; } catch { return false; } }
         public static double SystemScale() { var dc = GetDC(IntPtr.Zero); try { var d = GetDeviceCaps(dc, 88); return d > 0 ? d / 96.0 : 1; } finally { ReleaseDC(IntPtr.Zero, dc); } }
 
+        // Test copies only (HALLOW_OVERLAY_DIR set): made-up screens from the file HALLOW_OVERLAY_SCREENS names, one per line
+        // "id|device|x|y|width|height|scale|primary" - read every time, so a test can unplug or change one. Far off any real screen.
+        static List<ScreenInfo> TestScreens()
+        {
+            var f = OverlaySettings.TestDir == null ? null : Environment.GetEnvironmentVariable("HALLOW_OVERLAY_SCREENS");
+            if (string.IsNullOrEmpty(f) || !System.IO.File.Exists(f)) return null;
+            var l = new List<ScreenInfo>(); var inv = System.Globalization.CultureInfo.InvariantCulture;
+            try
+            {
+                foreach (var line in System.IO.File.ReadAllLines(f))
+                {
+                    var p = line.Split('|'); if (p.Length < 8) continue;
+                    l.Add(new ScreenInfo { Id = p[0], Device = p[1], Bounds = new Rect(double.Parse(p[2], inv), double.Parse(p[3], inv), double.Parse(p[4], inv), double.Parse(p[5], inv)), Scale = double.Parse(p[6], inv), Primary = p[7].Trim() == "1" });
+                }
+            }
+            catch { }
+            Name(l); return l;
+        }
         public static List<ScreenInfo> All()
         {
+            var test = TestScreens(); if (test != null) return test;
             var l = new List<ScreenInfo>();
             try
             {

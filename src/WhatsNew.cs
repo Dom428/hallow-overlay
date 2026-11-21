@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.19", new[] { "The overlay remembers where you put it: after a restart or in a game it comes back to the same place (a panel put somewhere free keeps the edges nearest the screen's edges where you put them)", "Every move is saved straight away - a drag, the arrow keys, Done / Enter, and also when move mode ends by itself in the middle of a drag", "After a move it says where it went: \"Saved for <game>\" (a game with its own spot) or \"Saved as your usual spot\"" }),
             Tuple.Create("1.18", new[] { "Now playing works without Hallow Mixer: the song or video comes straight from Windows (Spotify, YouTube in a browser, any media app) - with Mixer running it still comes from Mixer" }),
             Tuple.Create("1.17", new[] { "\"Move it\" right after Overlay starts (before any game) works now - the panel could stay click-through, so it couldn't be dragged" }),
             Tuple.Create("1.16", new[] { "Dragging the panel in \"Move it\" mode works reliably now - and you can drag the \"Drag me\" card too", "After you finish moving, the panel stays in view for a moment so you see where it went" }),

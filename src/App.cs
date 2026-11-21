@@ -22,14 +22,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.18.0.0")]
-[assembly: AssemblyFileVersion("1.18.0.0")]
+[assembly: AssemblyVersion("1.19.0.0")]
+[assembly: AssemblyFileVersion("1.19.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.18";
+        public const string Version = "1.19";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -52,8 +52,8 @@ namespace HallowOverlay
                 new MainWindow(true).SnapAll(args[si + 1]); return 0;
             }
             bool created;
-            var mutex = new Mutex(true, @"Local\HallowOverlay", out created);
-            var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\HallowOverlayShow");
+            var mutex = new Mutex(true, Link.MutexName, out created);
+            var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, Link.ShowEventName);
             if (!created) { showEvent.Set(); return 0; }
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             Crash.Install(app);
@@ -258,13 +258,14 @@ namespace HallowOverlay
             try { games = Library.Scan(new List<Game>()); } catch { }
             AddTestGame();
             sampler.PingHost = S.PingHost; sampler.Start();
-            ov.Moved = () => { S.Save(); UpdatePosText(); WriteStatus(true); };
+            if (testCopy) { ov.Left = -32000; ov.Top = -32000; }   // a test copy: nothing on a real screen before it's placed on its made-up ones
+            ov.Moved = SaveMove;
             ov.Ended = MoveEnded;
-            SystemEvents.DisplaySettingsChanged += (s, e) => Dispatcher.BeginInvoke(new Action(() => { Refresh(); WriteStatus(true); }));   // screens plugged in / out, resolution or DPI changed
-            SetupTray();
+            SystemEvents.DisplaySettingsChanged += (s, e) => Dispatcher.BeginInvoke(new Action(DisplayChanged));   // screens plugged in / out, resolution or DPI changed
+            if (!testCopy) SetupTray();
             // your own hotkeys (1.14) on this window's handle (it exists even while the window is hidden)
             var hwnd = new WindowInteropHelper(this).EnsureHandle();
-            keys = new HotkeySet(hwnd, S.Hotkeys); keyFails = keys.RegisterAll(); ShowHotkeys();
+            if (!testCopy) { keys = new HotkeySet(hwnd, S.Hotkeys); keyFails = keys.RegisterAll(); } ShowHotkeys();
             HwndSource.FromHwnd(hwnd).AddHook((IntPtr h, int msg, IntPtr wp, IntPtr lp, ref bool handled) => { if (msg == 0x0312) { var a = HotkeySet.ActionOf(wp.ToInt32()); if (a != null) { Invoke(a); handled = true; } } return IntPtr.Zero; });
             tick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) }; tick.Tick += (s, e) => Refresh(); tick.Start();
             poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) }; poll.Tick += (s, e) => { try { tracker.Poll(games.Concat(games.SelectMany(g => g.Alts)).ToList()); } catch { } CheckExclusive(); RunFps(); RunNet(); }; poll.Start();
@@ -272,9 +273,9 @@ namespace HallowOverlay
             msgTimer = new DispatcherTimer(); msgTimer.Tick += (s, e) => { msgTimer.Stop(); Refresh(); };
             Link.Serve(Dispatcher, OnCommand);
             Accent.Watch(Dispatcher, ApplyAccent);
-            { DateTime lc; if (S.AutoUpdate && (!DateTime.TryParse(S.LastUpdateCheck, out lc) || (DateTime.Now - lc).TotalHours > 20)) CheckForUpdate(false); }
-            var daily = new DispatcherTimer { Interval = TimeSpan.FromHours(6) }; daily.Tick += (s, e) => { DateTime lc; if (S.AutoUpdate && (!DateTime.TryParse(S.LastUpdateCheck, out lc) || (DateTime.Now - lc).TotalHours > 20)) CheckForUpdate(false); }; daily.Start();
-            Dispatcher.BeginInvoke(new Action(CheckCrash), DispatcherPriority.ApplicationIdle);
+            if (!testCopy) { DateTime lc; if (S.AutoUpdate && (!DateTime.TryParse(S.LastUpdateCheck, out lc) || (DateTime.Now - lc).TotalHours > 20)) CheckForUpdate(false); }
+            var daily = new DispatcherTimer { Interval = TimeSpan.FromHours(6) }; daily.Tick += (s, e) => { DateTime lc; if (!testCopy && S.AutoUpdate && (!DateTime.TryParse(S.LastUpdateCheck, out lc) || (DateTime.Now - lc).TotalHours > 20)) CheckForUpdate(false); }; daily.Start();
+            if (!testCopy) Dispatcher.BeginInvoke(new Action(CheckCrash), DispatcherPriority.ApplicationIdle);
             AppDomain.CurrentDomain.ProcessExit += (s, e) => { try { fps.Stop(); net.Stop(); } catch { } };   // never leave a trace session behind
             WriteStatus(true);
             IsVisibleChanged += (s, e) => { if (IsVisible) Dispatcher.BeginInvoke(new Action(() => { ShowWhatsNew(); ShowCrash(); }), DispatcherPriority.ApplicationIdle); };
@@ -410,7 +411,8 @@ namespace HallowOverlay
                 case "open": ShowFromTray(); return "ok";
                 case "menu": return "ok " + Link.Json(new Dictionary<string, object> { { "app", "Overlay" }, { "items", MenuItems().ToArray() } });
                 case "invoke": return Invoke(arg);
-                case "move": return ToggleMove(arg.Equals("force", StringComparison.OrdinalIgnoreCase), null);   // scripts: not over a focused game unless "move force"
+                case "move": return ToggleMove(arg.Equals("force", StringComparison.OrdinalIgnoreCase), null);
+                case "test-display": if (!testCopy) return "error unknown command"; DisplayChanged(); return "ok";   // test copies: the screens file changed   // scripts: not over a focused game unless "move force"
                 case "quit":
                     var qt = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) }; qt.Tick += (s, e) => { qt.Stop(); Quit(); }; qt.Start();   // after the reply is sent
                     return "ok";
@@ -452,7 +454,9 @@ namespace HallowOverlay
         }
 
         // ---- "Move it" (1.15): drag the panel to place it
-        string moveGame;              // the game whose own spot is being moved (null: the usual spot, or the running game's own)
+        string moveGame;              // the game whose look is shown while moving (null: the usual look)
+        string moveSpotGame;          // 1.19: the game whose own spot the move is saved into (null: your usual spot)
+        string savedNote; DateTime savedNoteUntil;   // "Saved for Delta Force" / "Saved as your usual spot" (settings and the panel)
         OverlaySettings lastLook;     // the look the panel was last placed with
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out int pid);
@@ -474,20 +478,46 @@ namespace HallowOverlay
             if (!MoveAllowed(explicitAsk, GameHasFocus())) return "error a game has the focus - use the menu, the hotkey or \"move force\"";
             // which spot: a game's own one (the game picked in the settings, else the running game) if it has one, else the usual spot
             var c = Current; string g = IsVisible && editGame != null ? editGame : c == null ? null : (c.Game.Parent ?? c.Game).Name;
-            var k = S.PerGameKey(g); OverlaySettings target = S; moveGame = null;
-            if (k != null && S.PerGame[k].OwnSpot) { target = S.PerGame[k]; moveGame = k; }
+            // 1.19: never asks - a game with "its own spot" on gets the move, otherwise it's your usual spot
+            var k = S.PerGameKey(g); OverlaySettings target = S; moveGame = null; moveSpotGame = null;
+            if (k != null && S.PerGame[k].OwnSpot) { target = S.PerGame[k]; moveGame = k; moveSpotGame = k; }
             else if (k != null) moveGame = k;   // the game's own look, at the usual spot
-            ov.BeginMove(target, true);
+            ov.BeginMove(target, !testCopy);   // a test copy never takes the focus
             Refresh();   // shows the panel (even if hidden) and puts it in place
             WriteStatus(true);
             return "ok moving";
         }
+        // A drag, a nudge or the end of a drag: saved to overlay.json at once (1.19: atomically, and it says which spot it went to).
+        void SaveMove()
+        {
+            bool ok = S.Save();
+            var t = SavedText(); savedNote = ok ? t : "Couldn't save the position (" + OverlaySettings.FilePath + ") - it's kept until Overlay closes"; savedNoteUntil = DateTime.Now.AddSeconds(8);
+            UpdatePosText(); WriteStatus(true);
+        }
+        // "Saved for Delta Force" or "Saved as your usual spot", and which games keep their own spot
+        string SavedText()
+        {
+            var tgt = ov.MoveTarget; string game = moveSpotGame != null && tgt != null && tgt != S ? moveSpotGame : null;
+            if (game != null) return "Saved for " + game;
+            var own = S.PerGame.Where(p => p.Value != null && p.Value.OwnSpot).Select(p => p.Key).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+            return "Saved as your usual spot" + (own.Count == 0 ? "" : " (" + (own.Count <= 2 ? string.Join(" and ", own) : own.Count + " games") + (own.Count == 1 ? " keeps its" : " keep their") + " own spot)");
+        }
         void MoveEnded(string why)
         {
-            moveGame = null; S.Save();
-            if (why == "timeout") ShowMessage("Done moving (2 minutes without a drag) - the overlay is click-through again", false, 4);
-            else if (why != "off") { var l = S.LookFor(Current == null ? null : (Current.Game.Parent ?? Current.Game).Name); ShowMessage("Saved here: " + Placement.SpotName(l.Anchor) + (l.OffX != 0 || l.OffY != 0 ? " (moved)" : ""), false, 3); }   // it stays in view a moment, even with no game running
+            bool ok = S.Save(); var saved = SavedText(); var tgt = ov.MoveTarget ?? S;
+            moveGame = null;
+            if (!ok) ShowMessage("Couldn't save the position - check that " + OverlaySettings.Dir + " can be written", true);
+            else if (why == "timeout") ShowMessage("Done moving (2 minutes without a drag) - " + saved.Substring(0, 1).ToLowerInvariant() + saved.Substring(1), false, 4);
+            else if (why != "off") ShowMessage(saved + ": " + Placement.SpotName(tgt.Anchor) + (tgt.OffX != 0 || tgt.OffY != 0 ? " (moved)" : ""), false, 3);   // it stays in view a moment, even with no game running
+            if (why != "off") { savedNote = ok ? saved : null; savedNoteUntil = DateTime.Now.AddSeconds(8); }
+            moveSpotGame = null;
             Refresh(); if (lookHost != null && IsVisible) BuildLook(); WriteStatus(true);
+        }
+        // Screens plugged in / out, resolution or DPI changed: put it back from the saved spot (a saved screen that's missing
+        // means the main screen for now - the choice stays saved, so it goes back when that screen returns).
+        void DisplayChanged()
+        {
+            Refresh(); UpdatePosText(); WriteStatus(true);
         }
         Dictionary<string, object> PositionInfo()
         {
@@ -536,7 +566,8 @@ namespace HallowOverlay
         }
 
         public void ShowMessage(string text, bool strong) { ShowMessage(text, strong, strong ? 8 : 2.5); }
-        static readonly bool testMode = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("HALLOW_OVERLAY_TESTGAME"));   // developer tests: nothing on screen
+        static readonly bool testCopy = OverlaySettings.TestDir != null;   // 1.19: a test copy with its own data folder (no tray, hotkeys, updates or focus)
+        static readonly bool testMode = testCopy || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("HALLOW_OVERLAY_TESTGAME"));   // developer tests: nothing on screen
         public void ShowMessage(string text, bool strong, double seconds)
         {
             if (testMode) { lastMessage = text; return; }
@@ -575,6 +606,7 @@ namespace HallowOverlay
         readonly NetMonitor net = new NetMonitor(); readonly ServerPing serverPing = new ServerPing(); DateTime netRetry; int netChanges; TextBlock serverInfo;
         void RunNet()
         {
+            if (testCopy) return;   // the trace sessions have one name per PC: a test copy must never take the real Overlay's
             var cur = Current; var look = S.LookFor(cur == null ? null : (cur.Game.Parent ?? cur.Game).Name);
             bool want = cur != null && (look.Server || look.Traffic);
             if (want)
@@ -586,6 +618,7 @@ namespace HallowOverlay
         }
         void RunFps()
         {
+            if (testCopy) return;
             var cl = CurrentLook; bool want = ((cl.Fps || cl.FrameGraph) && Current != null) || benchOn;
             if (want && !fps.Running && !fps.Denied && DateTime.Now >= fpsRetry) { if (!fps.Start()) fpsRetry = DateTime.Now.AddMinutes(1); }
             else if (!want && fps.Running) fps.Stop();
@@ -884,7 +917,8 @@ namespace HallowOverlay
         {
             if (posText == null) return;
             var P = PosLook(EditLook); bool found; var s = Placement.Pick(screens(), P.ScreenId, P.Screen, out found);
-            posText.Text = (ov.Moving ? "Moving - drag the panel, then Enter / Esc or Done.  " : "") + Placement.Describe(P, s, found) + ".";
+            var note = savedNote != null && DateTime.Now < savedNoteUntil ? savedNote + ".  " : "";
+            posText.Text = (ov.Moving ? "Moving - drag the panel, then Enter / Esc or Done.  " : "") + note + Placement.Describe(P, s, found) + ".";
         }
         void AlignPreview(OverlaySettings p)
         {
