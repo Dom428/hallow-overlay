@@ -22,14 +22,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.17.0.0")]
-[assembly: AssemblyFileVersion("1.17.0.0")]
+[assembly: AssemblyVersion("1.18.0.0")]
+[assembly: AssemblyFileVersion("1.18.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.17";
+        public const string Version = "1.18";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -852,7 +852,7 @@ namespace HallowOverlay
             sw("MIC MUTED warning", T.MicWarn, v => T.MicWarn = v); sw("CPU", T.Cpu, v => T.Cpu = v); sw("GPU load", T.Gpu, v => T.Gpu = v);
             sw("GPU temperature", T.GpuTemp, v => T.GpuTemp = v); sw("RAM", T.Ram, v => T.Ram = v); sw("Ping", T.Ping, v => T.Ping = v);
             sw("Session time", T.Session, v => T.Session = v); sw("Clock", T.Clock, v => T.Clock = v); sw("Game name", T.Game, v => T.Game = v);
-            sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("0.1% low", T.Fps01, v => T.Fps01 = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v); sw("Now playing (Mixer)", T.NowPlaying, v => T.NowPlaying = v); sw("Game server", T.Server, v => T.Server = v); sw("Game traffic (up / down)", T.Traffic, v => T.Traffic = v);
+            sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("0.1% low", T.Fps01, v => T.Fps01 = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v); sw("Now playing", T.NowPlaying, v => T.NowPlaying = v); sw("Game server", T.Server, v => T.Server = v); sw("Game traffic (up / down)", T.Traffic, v => T.Traffic = v);
             sw("GPU clocks", T.GpuClocks, v => T.GpuClocks = v); sw("GPU power", T.GpuPower, v => T.GpuPower = v); sw("VRAM", T.Vram, v => T.Vram = v);
             sw("Frame-time graph", T.FrameGraph, v => T.FrameGraph = v);
             lookHost.Children.Add(grid);

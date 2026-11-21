@@ -194,6 +194,7 @@ namespace HallowOverlay
             int tick = 0;
             new Thread(PingLoop) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "overlay ping" }.Start();
             new Thread(MixerLoop) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "overlay mixer" }.Start();
+            new Thread(WinMediaLoop) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "overlay media" }.Start();
             while (!stop)
             {
                 Thread.Sleep(1000); tick++;
@@ -201,7 +202,7 @@ namespace HallowOverlay
                 try { if (cpu != null) s.Cpu = Math.Min(100, cpu.NextValue()); } catch { }
                 try { var m = new MEMORYSTATUSEX(); if (GlobalMemoryStatusEx(m)) { s.RamTotalGB = m.ullTotalPhys / 1073741824.0; s.RamUsedGB = (m.ullTotalPhys - m.ullAvailPhys) / 1073741824.0; } } catch { }
                 s.Gpu = gpu; s.GpuTemp = gpuTemp; s.GpuClock = gpuClock; s.MemClock = memClock; s.PowerW = power; s.PowerLimitW = powerLimit; s.VramUsedMB = vramUsed; s.VramTotalMB = vramTotal;
-                lock (gate) { s.PingMs = pingMs; s.LossPct = lossPct; s.JitterMs = jitterMs; s.MicMuted = muted; s.MixerOn = mixerOn; s.NowPlaying = nowPlaying; last = s; }
+                lock (gate) { s.PingMs = pingMs; s.LossPct = lossPct; s.JitterMs = jitterMs; s.MicMuted = muted; s.MixerOn = mixerOn; s.NowPlaying = mixerOn ? nowPlaying : winNow; last = s; }
                 if (smi != null && smi.HasExited && tick % 30 == 0) StartSmi();
             }
         }
@@ -278,6 +279,22 @@ namespace HallowOverlay
                     SetMixer(false, false, null); rev = 0; Thread.Sleep(2000);
                 }
                 catch { SetMixer(false, false, null); rev = 0; Thread.Sleep(2000); }
+            }
+        }
+        // Without Hallow Mixer: what's playing, straight from Windows (Spotify, a browser, any media app), every 2 seconds.
+        string winNow;
+        void WinMediaLoop()
+        {
+            while (!stop)
+            {
+                bool on; lock (gate) on = mixerOn;
+                string now = on ? null : WinMedia.Read();
+                lock (gate)
+                {
+                    bool changed = now != winNow; winNow = now;
+                    if (changed && !mixerOn) { var s = last.Copy(); s.NowPlaying = now; last = s; }
+                }
+                Thread.Sleep(2000);
             }
         }
         void SetMixer(bool on, bool m, string now)

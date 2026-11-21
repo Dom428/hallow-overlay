@@ -22,6 +22,7 @@
 | **1.15** | Put it anywhere: 9 spots, any screen (by monitor id, main screen while it's missing), edge offset slider; Move it mode (settings, tray / Hallow menu `invoke move`, optional hotkey) with snapping to spots / edges / centre lines, arrow-key nudges, click-through restored on Enter / Esc / Done / focus loss / 2 min; saved as spot + offset share of the screen (survives resolution / DPI); own spot per game or "use my usual spot"; Reset position; `position` in status.json |
 | **1.16** | Dragging fixed: move mode handles the panel's own mouse messages (press / move with capture / release) instead of WPF's DragMove; the "Drag me" card drags the panel too; "Saved here" flash after moving; status position predicted while hidden |
 | **1.17** | Move it fixed for real: move mode started before the panel was ever shown (no game since start) left the new window click-through; the window is created first and the styles re-checked every second |
+| **1.18** | Now playing without Hallow Mixer: when Mixer isn't running, the song or video comes straight from Windows' media sessions (what's playing, every 2 s, read only); with Mixer running it still comes from Mixer |
 
 ## Next
 

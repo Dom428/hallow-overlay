@@ -5,6 +5,10 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.18
+- Now playing works without Hallow Mixer: the song or video comes straight from Windows
+  (Spotify, YouTube in a browser, any media app). With Mixer running it still comes from Mixer.
+
 WHAT'S NEW IN 1.17
 - "Move it" right after Overlay starts (before any game) works now - the panel could stay click-through, so it couldn't be dragged.
 
