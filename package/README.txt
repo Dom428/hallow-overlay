@@ -5,6 +5,10 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.23
+- Gear battery chips: Bluetooth earbuds and controllers have their own icons now (they
+  showed a plain battery).
+
 WHAT'S NEW IN 1.22
 - Battery chips from Hallow Gear: your mouse and headset's battery on the panel while you play -
   only when one is low (the default), always, or off (Settings > Gear battery).

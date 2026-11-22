@@ -1,4 +1,4 @@
-﻿// Hallow Overlay 1.22 - Hallow Gear's batteries on the panel. Reads %APPDATA%\HallowGear\status.json (written by Hallow Gear 1.0+)
+﻿// Hallow Overlay 1.22 / 1.23 - Hallow Gear's batteries on the panel. Reads %APPDATA%\HallowGear\status.json (written by Hallow Gear 1.0+)
 // at most every 10 s (only when the file changed). Nothing is sent to Gear. A missing, old, broken or stale file = no chips.
 //   chips: one compact chip per device with a battery - "always", "low" (default: only while it's at / under Gear's low level,
 //   20 % unless changed there, and not charging) or "off" (Settings > Gear battery).
@@ -93,7 +93,8 @@ namespace HallowOverlay
             if (g == null || mode == "off") return new List<GearChip>();
             return g.Devices.Where(c => mode == "always" || c.Level > 0).ToList();
         }
-        public static string Icon(string kind) { return kind == "headset" ? "headphones" : kind == "mouse" ? "computer-mouse" : kind == "keyboard" ? "keyboard" : "battery-half"; }
+        // 1.23: earbuds and controllers (Bluetooth, from Gear 1.1) get their own icons - the same glyphs as Hallow Gear 1.2's cards and notifications
+        public static string Icon(string kind) { return kind == "headset" ? "headphones" : kind == "mouse" ? "computer-mouse" : kind == "keyboard" ? "keyboard" : kind == "earbuds" ? "earbuds" : kind == "controller" ? "gamepad" : "battery-half"; }
         public static string Mode(string s) { return s == "always" || s == "off" ? s : "low"; }
     }
 }

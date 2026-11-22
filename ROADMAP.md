@@ -27,6 +27,7 @@
 | **1.20** | Light and dark mode for the settings windows: follows `mode` in theme.json (Light / Dark / Same as Windows, live) or Settings > Look (Follow Hallow / Light / Dark); light palette from the family spec, darkened accent for text, title bars match; the in-game panel stays dark and see-through |
 | **1.21** | Light mode readability fixes: filled accent buttons / chips use the family light fill (violet had dark text at 4.47:1 -> #8452F5 with white text), slider tracks use the darkened accent; light contrast test for every pair the settings windows use |
 | **1.22** | Battery chips from Hallow Gear: a compact chip per device with a battery (mouse, headset) on the panel - only when low (default: at or under Gear's lowAt, 20 %, and not charging), always or off (Settings > Gear battery, global); Gear's held low-battery alert (status.json `alert`, only while a game runs) as one quiet line, never a pop-up; read from %APPDATA%\HallowGear\status.json at most every 10 s (cached by write time), tolerant of missing / broken files, ignored when Gear says it isn't running or the file is over 15 min old and Gear's pipe is gone; chips and line last in the layout, never in a message-only panel |
+| **1.23** | Gear battery chips: earbuds get an earbuds icon (Hallow's own path, the same as Hallow Gear 1.2) and controllers the gamepad, instead of the default battery; nothing else changed |
 
 ## Next
 
