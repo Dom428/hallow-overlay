@@ -5,6 +5,12 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.22
+- Battery chips from Hallow Gear: your mouse and headset's battery on the panel while you play -
+  only when one is low (the default), always, or off (Settings > Gear battery).
+- Hallow Gear doesn't pop up during a game: its low-battery alert shows on the panel as a quiet
+  line instead.
+
 WHAT'S NEW IN 1.21
 - Light mode readability fixes: buttons and selected options in your accent colour always have
   readable text (a violet accent had dark text that was a little too faint), and the sliders use

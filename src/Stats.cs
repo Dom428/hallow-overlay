@@ -52,13 +52,14 @@ namespace HallowOverlay
         [DataMember] public bool UseHallowIcon = true;   // let Hallow Hub show one tray icon for all Hallow apps
         [DataMember] public bool HideServerIp = true;    // show the region, never the server's IP (for streaming)
         [DataMember] public double HotGpu = 80, HighPing = 80, RamFull = 85;   // "in trouble" from: GPU °C, ping ms, RAM % used
+        [DataMember] public string GearChips = "low";   // 1.22: Hallow Gear battery chips on the panel: "always", "low" (only when low), "off"
         // Games with their own corner, size and stats (by game name). Everything above "PingHost" is the look; the rest is global.
         [DataMember(EmitDefaultValue = false)] public Dictionary<string, OverlaySettings> PerGame = new Dictionary<string, OverlaySettings>();
         [OnDeserializing] void D(StreamingContext c)
         {
             Corner = "tl"; Anchor = null; Margin = Placement.DefaultMargin; OffX = OffY = 0; Screen = ScreenId = ScreenName = ""; OwnSpot = false; Scale = 1; Opacity = 0.85; Row = true; OnlyInGame = true; Cpu = Gpu = GpuTemp = Ram = Ping = Clock = Session = MicWarn = true; Game = false; Fps = true; PingHost = "1.1.1.1"; Hotkey = true; Hotkeys = null; TrayOnClose = true;
             OffGames = new List<string>(); LastSeenVersion = "1.0";   // a settings file without it was written by 1.0
-            GpuClocks = GpuPower = Vram = FrameGraph = false; Styles = null; TextSize = "m"; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; ColorMode = "follow"; LastCrashShown = ""; AutoUpdate = true; LastUpdateCheck = ""; ToldUpdate = ""; Fps01 = false; LogCsv = false; HotGpu = 80; HighPing = 80; RamFull = 85; PerGame = null;
+            GpuClocks = GpuPower = Vram = FrameGraph = false; Styles = null; TextSize = "m"; GraphSize = "m"; OnlyBad = false; LossJitter = true; NowPlaying = true; Server = true; Traffic = false; HideServerIp = true; UseHallowIcon = true; UseHallowAccent = true; ColorMode = "follow"; LastCrashShown = ""; AutoUpdate = true; LastUpdateCheck = ""; ToldUpdate = ""; Fps01 = false; LogCsv = false; HotGpu = 80; HighPing = 80; RamFull = 85; GearChips = "low"; PerGame = null;
         }
         [OnDeserialized] void Fix(StreamingContext c)
         {
@@ -123,6 +124,7 @@ namespace HallowOverlay
         public double[] FrameMs; public int FrameCount;   // the last few seconds of frame times (for the graph), oldest first
         public string ServerLabel; public double ServerMs = -1, ServerLoss = -1, UpKbps = -1, DownKbps = -1; public bool ServerApprox; public int Stalls;   // the game's server (from NetMonitor)
         public string NowPlaying;   // "Artist - Title" while something plays (Hallow Mixer), else null
+        public List<GearChip> Gear; public string GearAlert; public int GearAlertLevel = 1;   // 1.22: Hallow Gear's battery chips and its held low-battery alert
         public Sample Copy() { return (Sample)MemberwiseClone(); }
     }
 

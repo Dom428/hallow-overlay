@@ -22,14 +22,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.21.0.0")]
-[assembly: AssemblyFileVersion("1.21.0.0")]
+[assembly: AssemblyVersion("1.22.0.0")]
+[assembly: AssemblyFileVersion("1.22.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.21";
+        public const string Version = "1.22";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -187,10 +187,24 @@ namespace HallowOverlay
             if (s.Traffic && x.UpKbps >= 0) item("traffic", "arrow-right-arrow-left", "", "\u2191" + x.UpKbps.ToString("0") + "  \u2193" + x.DownKbps.ToString("0") + " kbps", 0);
             if (s.NowPlaying && !string.IsNullOrEmpty(x.NowPlaying)) item("nowplaying", "music", "", x.NowPlaying.Length > 48 ? x.NowPlaying.Substring(0, 47) + "\u2026" : x.NowPlaying, 0);
             if (s.Clock) item("clock", "clock", "", DateTime.Now.ToString("HH:mm"), 0);
-            // the layout's order (the benchmark marker always first)
+            // 1.22: Hallow Gear - a compact chip per device (its battery, a bolt while it charges), and Gear's held low-battery alert as one quiet line
+            if (!msgOnly && x.Gear != null)
+                foreach (var c in x.Gear)
+                {
+                    int before = items.Count;
+                    item("gear", GearLink.Icon(c.Kind), "", c.Pct + "%", c.Level);
+                    if (items.Count > before && (c.Charging || c.Full))
+                    {
+                        var bolt = Icons.Make("bolt", 10 * k, B("#6ED28C")); bolt.Margin = new Thickness(4 * k, 0, 0, 0); bolt.VerticalAlignment = VerticalAlignment.Center;
+                        ((StackPanel)items[items.Count - 1].Value).Children.Add(bolt);
+                    }
+                    if (items.Count > before && !string.IsNullOrEmpty(c.Name)) ((FrameworkElement)items[items.Count - 1].Value).ToolTip = c.Name;
+                }
+            if (!msgOnly && !string.IsNullOrEmpty(x.GearAlert)) item("gearalert", "battery-quarter", "", x.GearAlert.Length > 60 ? x.GearAlert.Substring(0, 59) + "\u2026" : x.GearAlert, Math.Max(1, x.GearAlertLevel));
+            // the layout's order (the benchmark marker always first; Gear's chips and line last)
             var order = styles.Select(z => z.Id).ToList();
             var list = new StackPanel { Orientation = s.Row ? Orientation.Horizontal : Orientation.Vertical };
-            foreach (var i in items.OrderBy(z => z.Key == "bench" ? -1 : order.IndexOf(z.Key))) list.Children.Add(i.Value);            var outer = new StackPanel { Orientation = s.Row ? Orientation.Horizontal : Orientation.Vertical };
+            foreach (var i in items.OrderBy(z => z.Key == "bench" ? -1 : z.Key == "gear" ? 1000 : z.Key == "gearalert" ? 1001 : order.IndexOf(z.Key))) list.Children.Add(i.Value);            var outer = new StackPanel { Orientation = s.Row ? Orientation.Horizontal : Orientation.Vertical };
             if (!string.IsNullOrEmpty(msg))
             {
                 var mb = new Border { Background = B(strong ? "#F07820" : "#7A4FD0"), CornerRadius = new CornerRadius(8 * k), Padding = new Thickness(10 * k, 4 * k, 10 * k, 4 * k), Margin = s.Row ? new Thickness(0, 0, 10 * k, 0) : new Thickness(0, 0, 0, 6 * k) };
@@ -680,6 +694,10 @@ namespace HallowOverlay
                 }
                 if (fd.Changes != netChanges) { netChanges = fd.Changes; if (S.LookFor(game).Server && msg == null) { ShowMessage("Server changed", false); return; } }
             }
+            // 1.22: Hallow Gear's batteries (its status.json, looked at every 10 s at most) and its held low-battery alert while you play
+            var gs = GearLink.Read(DateTime.Now);
+            x.Gear = GearLink.Chips(gs, GearLink.Mode(S.GearChips));
+            x.GearAlert = cur != null && gs != null ? gs.Alert : null; x.GearAlertLevel = gs != null && gs.AlertLevel == "critical" ? 2 : 1;
             // match summary: one per game session
             var recNow = cur == null ? null : game + "|" + cur.Since.Ticks;
             if (recNow != recKey)
@@ -716,7 +734,7 @@ namespace HallowOverlay
                 var pl = editGame != null ? S.LookFor(editGame) : look;
                 AlignPreview(pl);
                 preview.Child = Fit(Panel.Build(pl, px, editGame ?? game ?? "Delta Force", session ?? TimeSpan.FromMinutes(42)));
-                foot.Text = FootText(); serverInfo.Text = ServerText(cur != null);
+                foot.Text = FootText(); serverInfo.Text = ServerText(cur != null); if (gearInfo != null) gearInfo.Text = GearText();
                 state.Text = exclusiveGame != null && exclusiveGame == game ? ExclusiveNote(game) :
                     !shown ? "Hidden - " + (KeyText("toggle") != null ? "press " + KeyText("toggle") + " (or use the tray menu)" : "use the tray menu") + " to show it again." :
                     off ? "Turned off for " + game + " (in Hallow Hub's game settings)." :
@@ -815,6 +833,18 @@ namespace HallowOverlay
             var hide = new CheckBox { Content = "Hide the server's IP address (for streaming) - only its region is shown", IsChecked = S.HideServerIp, Style = (Style)FindResource("Switch") };
             hide.Click += (s, e) => { S.HideServerIp = hide.IsChecked == true; S.Save(); Refresh(); };
             sp.Children.Add(hide);
+            // 1.22: Hallow Gear's batteries (global)
+            sp.Children.Add(new TextBlock { Text = "Gear battery (from Hallow Gear)", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 14, 0, 4) });
+            var gw = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+            foreach (var o in new[] { Tuple.Create("always", "Always"), Tuple.Create("low", "Only when low"), Tuple.Create("off", "Off") })
+            {
+                var key = o.Item1; var c = new ToggleButton { Content = o.Item2, Style = (Style)FindResource("Chip"), Margin = new Thickness(0, 0, 6, 0), Padding = new Thickness(12, 5, 12, 5), IsChecked = GearLink.Mode(S.GearChips) == key };
+                c.Click += (s, e) => { S.GearChips = key; S.Save(); foreach (ToggleButton x in gw.Children) x.IsChecked = x == c; Refresh(); };
+                gw.Children.Add(c);
+            }
+            sp.Children.Add(gw);
+            gearInfo = new TextBlock { Text = GearText(), TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), FontSize = 11.5, Margin = new Thickness(0, 0, 0, 6) };
+            sp.Children.Add(gearInfo);
             updateRow = new Border { Background = B("#2A2236"), BorderBrush = Accent.Ink(), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 10, 14, 10), Margin = new Thickness(0, 14, 0, 0), Visibility = Visibility.Collapsed };
             var ur = new DockPanel(); updateBtn = new Button { Style = (Style)FindResource("Accent"), MinWidth = 120 }; DockPanel.SetDock(updateBtn, Dock.Right);
             updateBtn.Click += (s, e) => InstallUpdate(); ur.Children.Add(updateBtn);
@@ -1033,6 +1063,15 @@ namespace HallowOverlay
         }
 
         // What the settings window says about the game's server.
+        // 1.22: the Gear battery section: what it does, and what Hallow Gear says now
+        TextBlock gearInfo;
+        string GearText()
+        {
+            var t = "A small chip per device on the panel while you play, with its battery. Only when low = at or under Hallow Gear's low level (20 % unless you changed it there) and not charging. While you play, Hallow Gear's low-battery alert shows on the panel as a quiet line instead of a pop-up.";
+            var g = GearLink.Read(DateTime.Now);
+            if (g == null) return t + " Hallow Gear isn't running right now, so there's nothing to show.";
+            return t + (g.Devices.Count == 0 ? " Hallow Gear runs, but has no battery reading yet." : " Now: " + string.Join(", ", g.Devices.Select(c => c.Name + " " + c.Pct + "%" + (c.Charging ? " (charging)" : ""))) + ".");
+        }
         string ServerText(bool inGame)
         {
             const string relay = " Games that send their traffic through a relay network (Valve's SDR in Counter-Strike 2 or Deadlock, for example) show the relay, not the game server.";
@@ -1184,6 +1223,8 @@ namespace HallowOverlay
 
         public void SnapAll(string dir)
         {
+            GearLink.SnapStatus = GearLink.Parse("{\"app\":\"Gear\",\"running\":true,\"lowAt\":20,\"veryLowAt\":10,\"devices\":[{\"kind\":\"mouse\",\"name\":\"PRO X 2\",\"battery\":64},{\"kind\":\"headset\",\"name\":\"ASTRO A50\",\"battery\":82,\"charging\":true}]}");   // 1.22: made-up gear
+            if (gearInfo != null) gearInfo.Text = GearText();
             var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97, FpsLow01 = 81, NowPlaying = "Lo-fi Beats - Rainy Night", ServerLabel = "FRA", ServerMs = 23, ServerApprox = true, ServerLoss = 0, UpKbps = 96, DownKbps = 410, GpuClock = 2610, MemClock = 10501, PowerW = 241, PowerLimitW = 285, VramUsedMB = 9420, VramTotalMB = 16376, FrameMs = FakeFrames(), FrameCount = 720 };
             screens = SnapScreens; BuildLook();   // made-up screens: a 4K-ish main one at 150 % and one on its left
             preview.Child = Fit(Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)));
@@ -1268,6 +1309,14 @@ namespace HallowOverlay
                 TextBlock gt; Button db; var card = MoveHint.Card(() => { }, out gt, out db); gt.Text = "Snapped: top / centre";
                 card.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity)); Canvas.SetLeft(card, Math.Round(480 - card.DesiredSize.Width / 2)); Canvas.SetTop(card, 14 + fh + 8); cv.Children.Add(card);
                 one("move-mode.png", stg, 960);
+            }
+            {   // 1.22: Hallow Gear battery chips (always / only when low) and its held low-battery line during a game
+                var bx2 = x.Copy(); bx2.MicMuted = false;
+                var gst = GearLink.Parse("{\"app\":\"Gear\",\"running\":true,\"lowAt\":20,\"veryLowAt\":10,\"devices\":[{\"kind\":\"mouse\",\"name\":\"PRO X 2\",\"battery\":64},{\"kind\":\"headset\",\"name\":\"ASTRO A50\",\"battery\":9},{\"kind\":\"keyboard\",\"name\":\"G713\",\"battery\":null}],\"alert\":{\"text\":\"Headset battery very low: 9 %\",\"level\":\"critical\"}}");
+                bx2.Gear = GearLink.Chips(gst, "always"); one("gear-always.png", Panel.Build(S, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 1100);
+                bx2.Gear = GearLink.Chips(gst, "low"); bx2.GearAlert = gst.Alert; bx2.GearAlertLevel = 2; one("gear-low-alert.png", Panel.Build(S, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 1300);
+                var gc = S.LookCopy(); gc.Row = false; one("gear-column.png", Panel.Build(gc, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 300);
+                var gch = gst.Devices[0]; gch.Charging = true; bx2.Gear = GearLink.Chips(gst, "always"); bx2.GearAlert = null; one("gear-charging.png", Panel.Build(S, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 1100);
             }
             Snap.Save(new CrashNotice(System.IO.Path.Combine(Crash.Dir, "2026-11-19 20-14-03.txt")), System.IO.Path.Combine(dir, "crash-notice.png"), 470, 0);
             S.Row = false; x.MicMuted = false;

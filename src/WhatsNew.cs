@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.22", new[] { "Battery chips from Hallow Gear: your mouse and headset's battery on the panel while you play - only when one is low (the default), always, or off (Settings > Gear battery)", "Hallow Gear doesn't pop up during a game: its low-battery alert shows on the panel as a quiet line instead" }),
             Tuple.Create("1.21", new[] { "Light mode readability fixes: buttons and selected options in your accent colour always have readable text (a violet accent had dark text that was a little too faint), and the sliders use the darker accent so they stand out" }),
             Tuple.Create("1.20", new[] { "Light and dark mode for the settings windows: they follow the Light / Dark / Same as Windows choice in Hallow Toolkit, live", "Your own choice in Settings > Look: Follow Hallow, Light or Dark", "The in-game panel stays as it is - see-through and dark over your games" }),
             Tuple.Create("1.19", new[] { "The overlay remembers where you put it: after a restart or in a game it comes back to the same place (a panel put somewhere free keeps the edges nearest the screen's edges where you put them)", "Every move is saved straight away - a drag, the arrow keys, Done / Enter, and also when move mode ends by itself in the middle of a drag", "After a move it says where it went: \"Saved for <game>\" (a game with its own spot) or \"Saved as your usual spot\"" }),
