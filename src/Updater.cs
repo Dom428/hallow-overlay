@@ -30,6 +30,7 @@ namespace HallowOverlay
     {
         public const string Repo = "Dom428/hallow-overlay";
         public static Version Current { get { return typeof(Updater).Assembly.GetName().Version; } }
+        public static string Show(Version v) { return v.Build > 0 ? v.ToString(3) : v.ToString(2); }   // 1.23.1: "1.23.1", "1.23"
 
         static WebClient Client()
         {

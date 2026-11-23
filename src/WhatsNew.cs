@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.23.1", new[] { "Percentages read 45% instead of 45 %" }),
             Tuple.Create("1.23", new[] { "Gear battery chips: Bluetooth earbuds and controllers have their own icons now (they showed a plain battery)" }),
             Tuple.Create("1.22", new[] { "Battery chips from Hallow Gear: your mouse and headset's battery on the panel while you play - only when one is low (the default), always, or off (Settings > Gear battery)", "Hallow Gear doesn't pop up during a game: its low-battery alert shows on the panel as a quiet line instead" }),
             Tuple.Create("1.21", new[] { "Light mode readability fixes: buttons and selected options in your accent colour always have readable text (a violet accent had dark text that was a little too faint), and the sliders use the darker accent so they stand out" }),

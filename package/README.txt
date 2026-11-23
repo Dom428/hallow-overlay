@@ -5,6 +5,9 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.23.1
+- Percentages read 45% instead of 45 %.
+
 WHAT'S NEW IN 1.23
 - Gear battery chips: Bluetooth earbuds and controllers have their own icons now (they
   showed a plain battery).

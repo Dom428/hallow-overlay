@@ -22,14 +22,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.23.0.0")]
-[assembly: AssemblyFileVersion("1.23.0.0")]
+[assembly: AssemblyVersion("1.23.1.0")]
+[assembly: AssemblyFileVersion("1.23.1.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.23";
+        public const string Version = "1.23.1";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -360,7 +360,7 @@ namespace HallowOverlay
                     S.LastUpdateCheck = DateTime.Now.ToString("o"); S.Save();
                     if (!Updater.IsNewer(r)) { pending = null; updateNote = manual ? "You have the newest version (v" + Program.Version + ")." : null; ShowUpdate(); return; }
                     pending = r; updateNote = null; ShowUpdate();
-                    var v = r.Version.ToString(2);
+                    var v = Updater.Show(r.Version);
                     if (!manual && S.ToldUpdate != v) { S.ToldUpdate = v; S.Save(); Balloon("Hallow Overlay " + v + " is available", "Open Overlay's settings to update (it asks first).", 6000); }
                 }));
             });
@@ -370,7 +370,7 @@ namespace HallowOverlay
             if (updateRow == null) return;
             if (pending != null)
             {
-                var v = pending.Version.ToString(2);
+                var v = Updater.Show(pending.Version);
                 updateText.Text = "Hallow Overlay " + v + " is available (you have " + Program.Version + "). It's checked against GitHub's checksum before it installs, then Overlay reopens.";
                 updateBtn.Content = "Update to v" + v; updateBtn.Visibility = Visibility.Visible; updateBtn.IsEnabled = true;
                 updateBtn.ToolTip = (pending.Notes ?? "").Length > 600 ? pending.Notes.Substring(0, 600) + "..." : pending.Notes;
@@ -388,7 +388,7 @@ namespace HallowOverlay
                 var err = Updater.Install(r);
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    if (err != null) { updateText.Text = err; updateBtn.IsEnabled = true; updateBtn.Content = "Update to v" + r.Version.ToString(2); }
+                    if (err != null) { updateText.Text = err; updateBtn.IsEnabled = true; updateBtn.Content = "Update to v" + Updater.Show(r.Version); }
                     else updateText.Text = "Installing the update - Hallow Overlay reopens in a few seconds.";
                 }));
             });
@@ -1067,7 +1067,7 @@ namespace HallowOverlay
         TextBlock gearInfo;
         string GearText()
         {
-            var t = "A small chip per device on the panel while you play, with its battery. Only when low = at or under Hallow Gear's low level (20 % unless you changed it there) and not charging. While you play, Hallow Gear's low-battery alert shows on the panel as a quiet line instead of a pop-up.";
+            var t = "A small chip per device on the panel while you play, with its battery. Only when low = at or under Hallow Gear's low level (20% unless you changed it there) and not charging. While you play, Hallow Gear's low-battery alert shows on the panel as a quiet line instead of a pop-up.";
             var g = GearLink.Read(DateTime.Now);
             if (g == null) return t + " Hallow Gear isn't running right now, so there's nothing to show.";
             return t + (g.Devices.Count == 0 ? " Hallow Gear runs, but has no battery reading yet." : " Now: " + string.Join(", ", g.Devices.Select(c => c.Name + " " + c.Pct + "%" + (c.Charging ? " (charging)" : ""))) + ".");
@@ -1226,7 +1226,7 @@ namespace HallowOverlay
             GearLink.SnapStatus = GearLink.Parse("{\"app\":\"Gear\",\"running\":true,\"lowAt\":20,\"veryLowAt\":10,\"devices\":[{\"kind\":\"mouse\",\"name\":\"PRO X 2\",\"battery\":64},{\"kind\":\"headset\",\"name\":\"ASTRO A50\",\"battery\":82,\"charging\":true}]}");   // 1.22: made-up gear
             if (gearInfo != null) gearInfo.Text = GearText();
             var x = new Sample { Cpu = 23, Gpu = 97, GpuTemp = 71, RamUsedGB = 14.2, RamTotalGB = 32, PingMs = 18, MicMuted = true, MixerOn = true, Fps = 144, FpsLow = 97, FpsLow01 = 81, NowPlaying = "Lo-fi Beats - Rainy Night", ServerLabel = "FRA", ServerMs = 23, ServerApprox = true, ServerLoss = 0, UpKbps = 96, DownKbps = 410, GpuClock = 2610, MemClock = 10501, PowerW = 241, PowerLimitW = 285, VramUsedMB = 9420, VramTotalMB = 16376, FrameMs = FakeFrames(), FrameCount = 720 };
-            screens = SnapScreens; BuildLook();   // made-up screens: a 4K-ish main one at 150 % and one on its left
+            screens = SnapScreens; BuildLook();   // made-up screens: a 4K-ish main one at 150% and one on its left
             preview.Child = Fit(Panel.Build(S, x, "Delta Force", TimeSpan.FromMinutes(42)));
             state.Text = "Waiting for a game - it appears by itself when one starts.";
             Snap.Save(this, System.IO.Path.Combine(dir, "settings.png"), 760, 0);
@@ -1312,7 +1312,7 @@ namespace HallowOverlay
             }
             {   // 1.22: Hallow Gear battery chips (always / only when low) and its held low-battery line during a game
                 var bx2 = x.Copy(); bx2.MicMuted = false;
-                var gst = GearLink.Parse("{\"app\":\"Gear\",\"running\":true,\"lowAt\":20,\"veryLowAt\":10,\"devices\":[{\"kind\":\"mouse\",\"name\":\"PRO X 2\",\"battery\":64},{\"kind\":\"headset\",\"name\":\"ASTRO A50\",\"battery\":9},{\"kind\":\"keyboard\",\"name\":\"G713\",\"battery\":null}],\"alert\":{\"text\":\"Headset battery very low: 9 %\",\"level\":\"critical\"}}");
+                var gst = GearLink.Parse("{\"app\":\"Gear\",\"running\":true,\"lowAt\":20,\"veryLowAt\":10,\"devices\":[{\"kind\":\"mouse\",\"name\":\"PRO X 2\",\"battery\":64},{\"kind\":\"headset\",\"name\":\"ASTRO A50\",\"battery\":9},{\"kind\":\"keyboard\",\"name\":\"G713\",\"battery\":null}],\"alert\":{\"text\":\"Headset battery very low: 9%\",\"level\":\"critical\"}}");
                 bx2.Gear = GearLink.Chips(gst, "always"); one("gear-always.png", Panel.Build(S, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 1100);
                 bx2.Gear = GearLink.Chips(gst, "low"); bx2.GearAlert = gst.Alert; bx2.GearAlertLevel = 2; one("gear-low-alert.png", Panel.Build(S, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 1300);
                 var gc = S.LookCopy(); gc.Row = false; one("gear-column.png", Panel.Build(gc, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 300);

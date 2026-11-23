@@ -1,7 +1,7 @@
 ﻿// Hallow Overlay 1.22 / 1.23 - Hallow Gear's batteries on the panel. Reads %APPDATA%\HallowGear\status.json (written by Hallow Gear 1.0+)
 // at most every 10 s (only when the file changed). Nothing is sent to Gear. A missing, old, broken or stale file = no chips.
 //   chips: one compact chip per device with a battery - "always", "low" (default: only while it's at / under Gear's low level,
-//   20 % unless changed there, and not charging) or "off" (Settings > Gear battery).
+//   20% unless changed there, and not charging) or "off" (Settings > Gear battery).
 //   the held alert: while a game runs Hallow Gear doesn't pop up; its low-battery alert ("alert" in its status) shows here as a small line.
 using System;
 using System.Collections.Generic;
