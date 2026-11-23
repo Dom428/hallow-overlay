@@ -29,13 +29,14 @@
 | **1.22** | Battery chips from Hallow Gear: a compact chip per device with a battery (mouse, headset) on the panel - only when low (default: at or under Gear's lowAt, 20%, and not charging), always or off (Settings > Gear battery, global); Gear's held low-battery alert (status.json `alert`, only while a game runs) as one quiet line, never a pop-up; read from %APPDATA%\HallowGear\status.json at most every 10 s (cached by write time), tolerant of missing / broken files, ignored when Gear says it isn't running or the file is over 15 min old and Gear's pipe is gone; chips and line last in the layout, never in a message-only panel |
 | **1.23** | Gear battery chips: earbuds get an earbuds icon (Hallow's own path, the same as Hallow Gear 1.2) and controllers the gamepad, instead of the default battery; nothing else changed |
 | **1.23.1** | Percentages read 45% instead of 45 % (family-wide text fix): the Gear battery settings text and the README; the panel's own numbers already had no space. |
+| **1.24** | A test suite and a polish pass: `build.ps1 -Tests` builds tests\OverlayTests.exe (about 380 checks, off-screen: stats formatting, frame-time graph, position memory incl. the 1.19 anchor-width regression, Gear's status.json old / new fields, now playing / Spotify ads, Hub notify lines, the game hold, light / dark, the update text, settings migration, a test copy over the family pipe); the frame-time graph shows the 1% low (dashed line + "1% 65 fps"); Gear chips as one row of pills (plug on a cable, ~ when estimated, Gear's `state` field); "Ad muted" from Hallow Mixer 3.27 and "Replay saved" from Hallow Clips' status.json (optional) |
 
 ## Next
 
 ### Fixes from real use
 - Check it over real games in borderless / windowed mode, and that the exclusive-fullscreen notice shows up for games that really use exclusive fullscreen (needs real games - not testable here)
 - Compare the FPS and 1% low numbers with a game's own counter, including Vulkan / OpenGL games (only DirectX frames are counted now)
-- Check "Clip saved" (Hallow Clips) and the break reminder / daily limit (Hallow Hub) arrive over a real game once those apps send them
+- Check "Clip saved" (Hallow Clips) and the break reminder / daily limit (Hallow Hub) arrive over a real game once those apps send them; "Replay saved" once Clips writes `replaySaved` in its status.json, and "Ad muted" during a real Spotify ad with Mixer 3.27 (tested with made-up files and API replies)
 - Check the game server finder in real games (UDP and TCP games, IPv6, relayed games like Valve SDR) - a game socket that connected before the overlay noticed the game can be missed
 - Check the One Hallow icon with the real Hallow Hub 2.4 (menu, Exit, messages from Hub's icon) - tested with a fake Hub only
 - Check match summaries after real games (the summary when a game closes, history entries, servers per region) - tested with made-up samples only

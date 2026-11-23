@@ -22,14 +22,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow Overlay")]
 [assembly: AssemblyProduct("Hallow Overlay")]
 [assembly: AssemblyDescription("A see-through stats panel over your games")]
-[assembly: AssemblyVersion("1.23.1.0")]
-[assembly: AssemblyFileVersion("1.23.1.0")]
+[assembly: AssemblyVersion("1.24.0.0")]
+[assembly: AssemblyFileVersion("1.24.0.0")]
 
 namespace HallowOverlay
 {
     public static class Program
     {
-        public const string Version = "1.23.1";
+        public const string Version = "1.24";
         [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
         [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
         [STAThread]
@@ -83,12 +83,20 @@ namespace HallowOverlay
         // The frame-time graph: one frozen geometry per panel refresh (once a second), never per frame. Each pixel column shows the
         // slowest frame in it, so one long frame always shows; spikes (over twice the typical frame time) are red. Buffers are reused.
         static readonly double[] cols = new double[400], sorted = new double[4096];
+        // 1.24: the numbers behind the graph (tested): the typical (median) frame time, the 1% low frame time (the average of the
+        // slowest 1% of frames, the same rule as the 1% low FPS; -1 under 100 frames), the graph's top and the spike line.
+        public static void GraphStats(double[] ms, int n, out double med, out double low1Ms, out double top, out double spike)
+        {
+            int m = Math.Min(Math.Min(n, ms == null ? 0 : ms.Length), sorted.Length); med = 0; low1Ms = -1;
+            if (m > 0) { Array.Copy(ms, sorted, m); Array.Sort(sorted, 0, m); med = sorted[m / 2]; }
+            if (m >= 100) { int k = Math.Max(1, m / 100); double sum = 0; for (int i = m - k; i < m; i++) sum += sorted[i]; low1Ms = sum / k; }
+            top = Math.Max(med * 3, 20); spike = Math.Max(med * 2, med + 4);
+        }
         public static FrameworkElement Graph(double[] ms, int n, string size, double k, out int spikes)
         {
             double w = (size == "s" ? 110 : size == "l" ? 260 : 170) * k, h = (size == "s" ? 22 : size == "l" ? 48 : 32) * k;
             int c = Math.Min(cols.Length, Math.Max(10, (int)w));
-            int m = Math.Min(n, sorted.Length); Array.Copy(ms, sorted, m); Array.Sort(sorted, 0, m);
-            double med = sorted[m / 2], top = Math.Max(med * 3, 20), spike = Math.Max(med * 2, med + 4);
+            double med, low1, top, spike; GraphStats(ms, n, out med, out low1, out top, out spike);
             for (int i = 0; i < c; i++) cols[i] = 0;
             for (int i = 0; i < n; i++) { int ci = (int)((long)i * c / n); if (ms[i] > cols[ci]) cols[ci] = ms[i]; }
             var line = new StreamGeometry(); var red = new StreamGeometry(); spikes = 0;
@@ -105,11 +113,40 @@ namespace HallowOverlay
             var grid = new Grid { Width = w, Height = h, VerticalAlignment = VerticalAlignment.Center, ClipToBounds = true };
             var mid = h - med / top * h;
             grid.Children.Add(new System.Windows.Shapes.Line { X1 = 0, X2 = w, Y1 = mid, Y2 = mid, Stroke = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)), StrokeThickness = 1 });
+            // 1.24: the 1% low as a dashed amber line (where the slowest 1% of frames sit)
+            if (low1 > 0) { var ly = h - Math.Min(low1, top) / top * h; grid.Children.Add(new System.Windows.Shapes.Line { X1 = 0, X2 = w, Y1 = ly, Y2 = ly, Stroke = new SolidColorBrush(Color.FromArgb(170, 0xF0, 0xBE, 0x5A)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 3, 3 } }); }
             grid.Children.Add(new System.Windows.Shapes.Path { Data = line, Stroke = B("#A98BE0"), StrokeThickness = Math.Max(1, 1.3 * k), StrokeLineJoin = PenLineJoin.Round });
             grid.Children.Add(new System.Windows.Shapes.Path { Data = red, Stroke = B("#FF6B6B"), StrokeThickness = Math.Max(1.5, 2 * k) });
-            var label = new TextBlock { Text = med.ToString("0.0") + " ms", FontSize = 10 * k, Foreground = B("#8F88A0"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6 * k, 0, 0, 0) };
-            var sp = new StackPanel { Orientation = Orientation.Horizontal }; sp.Children.Add(grid); sp.Children.Add(label);
+            var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6 * k, 0, 0, 0) };
+            labels.Children.Add(new TextBlock { Text = GraphLabel(med), FontSize = 10 * k, Foreground = B("#8F88A0") });
+            if (low1 > 0) labels.Children.Add(new TextBlock { Text = GraphLowLabel(low1), FontSize = 10 * k, Foreground = B("#F0BE5A") });
+            var sp = new StackPanel { Orientation = Orientation.Horizontal }; sp.Children.Add(grid); sp.Children.Add(labels);
             return sp;
+        }
+        public static string GraphLabel(double medMs) { return medMs.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " ms"; }
+        // "1% 41 fps" - the 1% low frame time as FPS, like the FPS stat's "1% 41"
+        public static string GraphLowLabel(double low1Ms) { return low1Ms > 0 ? "1% " + (1000 / low1Ms).ToString("0", System.Globalization.CultureInfo.InvariantCulture) + " fps" : ""; }
+        // 1.24: Gear's battery chips as one group of pills: icon, "45%" ("~45%" estimated), a bolt (charging) or plug (on a cable).
+        // onlyBad: just the low ones. Null when there's nothing to show. Each pill's tooltip is the device's name.
+        public static FrameworkElement GearChips(IList<GearChip> gear, bool onlyBad, double k, double tf, bool row)
+        {
+            if (gear == null) return null;
+            var group = new StackPanel { Orientation = Orientation.Horizontal, Margin = row ? new Thickness(0, 0, 14 * k, 0) : new Thickness(0, 2, 0, 2), Tag = "gear" };
+            foreach (var c in gear)
+            {
+                if (c == null || (onlyBad && c.Level == 0)) continue;
+                var col = c.Level == 2 ? "#FF6B6B" : c.Level == 1 ? "#F0BE5A" : "#ECE8F4";
+                var tint = c.Level == 2 ? Color.FromArgb(56, 0xFF, 0x6B, 0x6B) : c.Level == 1 ? Color.FromArgb(48, 0xF0, 0xBE, 0x5A) : Color.FromArgb(22, 255, 255, 255);
+                var sp = new StackPanel { Orientation = Orientation.Horizontal };
+                var ic = Icons.Make(GearLink.Icon(c.Kind), 11 * k * tf, B(c.Level == 0 ? "#A98BE0" : col)); ic.Margin = new Thickness(0, 0, 5 * k, 0); ic.VerticalAlignment = VerticalAlignment.Center; sp.Children.Add(ic);
+                sp.Children.Add(new TextBlock { Text = GearLink.Text(c), FontSize = 12 * k * tf, FontWeight = FontWeights.SemiBold, Foreground = B(col), VerticalAlignment = VerticalAlignment.Center });
+                var mark = GearLink.Mark(c);
+                if (mark != null) { var mk = Icons.Make(mark, 9 * k * tf, B(mark == "bolt" ? "#6ED28C" : "#B8B0C8")); mk.Margin = new Thickness(3 * k, 0, 0, 0); mk.VerticalAlignment = VerticalAlignment.Center; sp.Children.Add(mk); }
+                var pill = new Border { Background = new SolidColorBrush(tint), CornerRadius = new CornerRadius(7 * k), Padding = new Thickness(6 * k, 1 * k, 7 * k, 1 * k), Margin = new Thickness(group.Children.Count == 0 ? 0 : 5 * k, 0, 0, 0), Child = sp, VerticalAlignment = VerticalAlignment.Center };
+                if (!string.IsNullOrEmpty(c.Name)) pill.ToolTip = c.Name;
+                group.Children.Add(pill);
+            }
+            return group.Children.Count == 0 ? null : group;
         }
         // msg: a short message from another Hallow app (flash, or a stronger remind); msgOnly: show just the message
         public static FrameworkElement Build(OverlaySettings s, Sample x, string game, TimeSpan? session, string msg, bool strong, bool msgOnly)
@@ -185,21 +222,15 @@ namespace HallowOverlay
                 item("server", "server", "", text, lv);
             }
             if (s.Traffic && x.UpKbps >= 0) item("traffic", "arrow-right-arrow-left", "", "\u2191" + x.UpKbps.ToString("0") + "  \u2193" + x.DownKbps.ToString("0") + " kbps", 0);
-            if (s.NowPlaying && !string.IsNullOrEmpty(x.NowPlaying)) item("nowplaying", "music", "", x.NowPlaying.Length > 48 ? x.NowPlaying.Substring(0, 47) + "\u2026" : x.NowPlaying, 0);
+            if (s.NowPlaying && !string.IsNullOrEmpty(x.NowPlaying)) item("nowplaying", x.AdMuted ? "volume-xmark" : "music", "", NowPlaying.Fit(x.NowPlaying), 0);   // 1.24: "Ad muted" while Hallow Mixer mutes a Spotify ad
             if (s.Clock) item("clock", "clock", "", DateTime.Now.ToString("HH:mm"), 0);
-            // 1.22: Hallow Gear - a compact chip per device (its battery, a bolt while it charges), and Gear's held low-battery alert as one quiet line
+            // 1.22: Hallow Gear - a compact chip per device (its battery, a bolt while it charges), and Gear's held low-battery alert as one quiet line.
+            // 1.24: the chips sit together in one row of small pills (also in a column panel), amber / red tinted when low
             if (!msgOnly && x.Gear != null)
-                foreach (var c in x.Gear)
-                {
-                    int before = items.Count;
-                    item("gear", GearLink.Icon(c.Kind), "", c.Pct + "%", c.Level);
-                    if (items.Count > before && (c.Charging || c.Full))
-                    {
-                        var bolt = Icons.Make("bolt", 10 * k, B("#6ED28C")); bolt.Margin = new Thickness(4 * k, 0, 0, 0); bolt.VerticalAlignment = VerticalAlignment.Center;
-                        ((StackPanel)items[items.Count - 1].Value).Children.Add(bolt);
-                    }
-                    if (items.Count > before && !string.IsNullOrEmpty(c.Name)) ((FrameworkElement)items[items.Count - 1].Value).ToolTip = c.Name;
-                }
+            {
+                var chips = GearChips(x.Gear, bad, k, tf, s.Row);
+                if (chips != null) items.Add(new KeyValuePair<string, FrameworkElement>("gear", chips));
+            }
             if (!msgOnly && !string.IsNullOrEmpty(x.GearAlert)) item("gearalert", "battery-quarter", "", x.GearAlert.Length > 60 ? x.GearAlert.Substring(0, 59) + "\u2026" : x.GearAlert, Math.Max(1, x.GearAlertLevel));
             // the layout's order (the benchmark marker always first; Gear's chips and line last)
             var order = styles.Select(z => z.Id).ToList();
@@ -371,8 +402,8 @@ namespace HallowOverlay
             if (pending != null)
             {
                 var v = Updater.Show(pending.Version);
-                updateText.Text = "Hallow Overlay " + v + " is available (you have " + Program.Version + "). It's checked against GitHub's checksum before it installs, then Overlay reopens.";
-                updateBtn.Content = "Update to v" + v; updateBtn.Visibility = Visibility.Visible; updateBtn.IsEnabled = true;
+                updateText.Text = Updater.PromptText(pending.Version, Program.Version);
+                updateBtn.Content = Updater.ButtonText(pending.Version); updateBtn.Visibility = Visibility.Visible; updateBtn.IsEnabled = true;
                 updateBtn.ToolTip = (pending.Notes ?? "").Length > 600 ? pending.Notes.Substring(0, 600) + "..." : pending.Notes;
                 updateRow.Visibility = Visibility.Visible;
             }
@@ -388,7 +419,7 @@ namespace HallowOverlay
                 var err = Updater.Install(r);
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    if (err != null) { updateText.Text = err; updateBtn.IsEnabled = true; updateBtn.Content = "Update to v" + Updater.Show(r.Version); }
+                    if (err != null) { updateText.Text = err; updateBtn.IsEnabled = true; updateBtn.Content = Updater.ButtonText(r.Version); }
                     else updateText.Text = "Installing the update - Hallow Overlay reopens in a few seconds.";
                 }));
             });
@@ -444,6 +475,7 @@ namespace HallowOverlay
                 case "flash":
                 case "remind":
                     if (arg.Length == 0) return "error no text";
+                    if (IsClipsText(arg)) clipsFlashAt = DateTime.Now;   // 1.24: Clips said it itself - no second "Replay saved" from its status.json
                     ShowMessage(arg, cmd == "remind"); return "ok";
                 case "open": ShowFromTray(); return "ok";
                 case "menu": return "ok " + Link.Json(new Dictionary<string, object> { { "app", "Overlay" }, { "items", MenuItems().ToArray() } });
@@ -628,6 +660,11 @@ namespace HallowOverlay
             lastStatus = now; Link.WriteStatus(StatusJson());
         }
         bool IsOff(string game) { return game != null && S.OffGames.Any(n => string.Equals(n, game, StringComparison.OrdinalIgnoreCase)); }
+        // 1.24 (tested): whether the stats panel shows - shown (not hidden by the hotkey), not turned off for this game in Hallow Hub,
+        // and a game running unless "only while a game runs" is off
+        public static bool WantPanel(bool shown, bool offForGame, bool onlyInGame, bool gameRunning) { return shown && !offForGame && (!onlyInGame || gameRunning); }
+        readonly ClipsLink.Watch clipsWatch = new ClipsLink.Watch(); DateTime clipsFlashAt = DateTime.MinValue;
+        static bool IsClipsText(string s) { return s != null && (s.StartsWith("Clip saved", StringComparison.OrdinalIgnoreCase) || s.StartsWith("Replay saved", StringComparison.OrdinalIgnoreCase) || s.StartsWith("Session saved", StringComparison.OrdinalIgnoreCase)); }
 
         // Windows can't draw anything over a game in exclusive fullscreen: say so once per game.
         void CheckExclusive()
@@ -697,7 +734,9 @@ namespace HallowOverlay
             // 1.22: Hallow Gear's batteries (its status.json, looked at every 10 s at most) and its held low-battery alert while you play
             var gs = GearLink.Read(DateTime.Now);
             x.Gear = GearLink.Chips(gs, GearLink.Mode(S.GearChips));
-            x.GearAlert = cur != null && gs != null ? gs.Alert : null; x.GearAlertLevel = gs != null && gs.AlertLevel == "critical" ? 2 : 1;
+            x.GearAlert = GearLink.HeldAlert(gs, cur != null); x.GearAlertLevel = GearLink.HeldLevel(gs);
+            // 1.24: "Replay saved" when Hallow Clips' status.json says so (only if Clips didn't already flash it over the pipe)
+            if ((msg == null || DateTime.Now >= msgUntil) && clipsWatch.Check(DateTime.Now) && (DateTime.Now - clipsFlashAt).TotalSeconds > 10) { ShowMessage(ClipsLink.Text, false); return; }
             // match summary: one per game session
             var recNow = cur == null ? null : game + "|" + cur.Since.Ticks;
             if (recNow != recKey)
@@ -714,7 +753,7 @@ namespace HallowOverlay
             StatHistory.Add("power", x.PowerW); StatHistory.Add("vram", x.VramUsedMB); StatHistory.Add("ram", x.RamUsedGB); StatHistory.Add("ping", x.PingMs); StatHistory.Add("server", x.ServerLabel != null ? x.ServerMs : -1);
             if (S.LogCsv && cur != null) statLog.Write(game, recNow, x, srvRegion ?? (S.HideServerIp ? null : srvIp), DateTime.Now); else statLog.Close();
             bool off = IsOff(game);
-            bool want = shown && !off && (!S.OnlyInGame || cur != null);
+            bool want = WantPanel(shown, off, S.OnlyInGame, cur != null);
             if (msg != null && DateTime.Now >= msgUntil) msg = null;
             var look = S.LookFor(ov.Moving && moveGame != null ? moveGame : game);
             if (want || msg != null || ov.Moving)
@@ -941,7 +980,7 @@ namespace HallowOverlay
             sw("Session time", T.Session, v => T.Session = v); sw("Clock", T.Clock, v => T.Clock = v); sw("Game name", T.Game, v => T.Game = v);
             sw("FPS and 1% low", T.Fps, v => T.Fps = v); sw("0.1% low", T.Fps01, v => T.Fps01 = v); sw("Packet loss and jitter", T.LossJitter, v => T.LossJitter = v); sw("Now playing", T.NowPlaying, v => T.NowPlaying = v); sw("Game server", T.Server, v => T.Server = v); sw("Game traffic (up / down)", T.Traffic, v => T.Traffic = v);
             sw("GPU clocks", T.GpuClocks, v => T.GpuClocks = v); sw("GPU power", T.GpuPower, v => T.GpuPower = v); sw("VRAM", T.Vram, v => T.Vram = v);
-            sw("Frame-time graph", T.FrameGraph, v => T.FrameGraph = v);
+            sw("Frame-time graph (with the 1% low)", T.FrameGraph, v => T.FrameGraph = v);
             lookHost.Children.Add(grid);
             var lay = new Button { Content = "Layout editor - order, labels, colours, graphs, text size", Style = (Style)FindResource("Btn"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 10, 0, 0) };
             lay.Click += (s, e) =>
@@ -1317,6 +1356,15 @@ namespace HallowOverlay
                 bx2.Gear = GearLink.Chips(gst, "low"); bx2.GearAlert = gst.Alert; bx2.GearAlertLevel = 2; one("gear-low-alert.png", Panel.Build(S, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 1300);
                 var gc = S.LookCopy(); gc.Row = false; one("gear-column.png", Panel.Build(gc, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 300);
                 var gch = gst.Devices[0]; gch.Charging = true; bx2.Gear = GearLink.Chips(gst, "always"); bx2.GearAlert = null; one("gear-charging.png", Panel.Build(S, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 1100);
+                // 1.24: newer Gear fields - a wired headset (plug), an estimated earbuds level (~), a low controller
+                var g13 = GearLink.Parse("{\"app\":\"Gear\",\"running\":true,\"devices\":[{\"kind\":\"headset\",\"name\":\"ASTRO A50\",\"battery\":71,\"state\":\"wired\"},{\"kind\":\"earbuds\",\"name\":\"Buds\",\"battery\":45,\"state\":\"on-battery\",\"estimated\":true},{\"kind\":\"controller\",\"name\":\"Xbox controller\",\"battery\":\"15%\",\"state\":\"on-battery\"}]}");
+                bx2.Gear = GearLink.Chips(g13, "always"); one("gear-1.24.png", Panel.Build(S, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 1300);
+                var gcol = S.LookCopy(); gcol.Row = false; one("gear-1.24-column.png", Panel.Build(gcol, bx2, "Delta Force", TimeSpan.FromMinutes(42)), 300);
+            }
+            {   // 1.24: "Ad muted" (Hallow Mixer muting a Spotify ad) and "Replay saved" (Hallow Clips)
+                var ax = x.Copy(); ax.MicMuted = false; ax.NowPlaying = NowPlaying.AdMutedText; ax.AdMuted = true;
+                one("nowplaying-admuted.png", Panel.Build(S, ax, "Delta Force", TimeSpan.FromMinutes(42)), 1100);
+                one("replay-saved.png", Panel.Build(S, ax, "Delta Force", TimeSpan.FromMinutes(42), ClipsLink.Text, false, false), 1300);
             }
             Snap.Save(new CrashNotice(System.IO.Path.Combine(Crash.Dir, "2026-11-19 20-14-03.txt")), System.IO.Path.Combine(dir, "crash-notice.png"), 470, 0);
             S.Row = false; x.MicMuted = false;

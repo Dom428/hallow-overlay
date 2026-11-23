@@ -30,7 +30,11 @@ namespace HallowOverlay
     {
         public const string Repo = "Dom428/hallow-overlay";
         public static Version Current { get { return typeof(Updater).Assembly.GetName().Version; } }
-        public static string Show(Version v) { return v.Build > 0 ? v.ToString(3) : v.ToString(2); }   // 1.23.1: "1.23.1", "1.23"
+        public static string Show(Version v) { return v == null ? "" : v.Build > 0 ? v.ToString(3) : v.ToString(2); }   // 1.23.1: "1.23.1", "1.23"
+        // 1.24 (tested): the update row's text and button - versions as people write them ("1.24", "1.23.1", never "1.24.0.0")
+        public static string PromptText(Version newer, string have) { return "Hallow Overlay " + Show(newer) + " is available (you have " + have + "). It's checked against GitHub's checksum before it installs, then Overlay reopens."; }
+        public static string ButtonText(Version newer) { return "Update to v" + Show(newer); }
+        public static bool IsNewer(GhRelease r, Version current) { return r != null && r.Zip != null && r.Version > new Version(current.Major, current.Minor, Math.Max(0, current.Build)); }
 
         static WebClient Client()
         {
@@ -54,7 +58,7 @@ namespace HallowOverlay
             }
             catch { return null; }
         }
-        public static bool IsNewer(GhRelease r) { return r != null && r.Zip != null && r.Version > new Version(Current.Major, Current.Minor, Math.Max(0, Current.Build)); }
+        public static bool IsNewer(GhRelease r) { return IsNewer(r, Current); }
 
         // Downloads the release zip, checks its SHA-256 against GitHub's, unpacks it and runs its installer
         // (which closes this copy, installs the new one and opens it). Returns an error message, or null when it started.

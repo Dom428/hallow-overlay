@@ -31,15 +31,21 @@ namespace HallowOverlay
 
         public static bool AskTrayHost()
         {
-            var r = Link.Ask(Link.HubPipe, "tray-host", 1000);
-            return r != null && r.StartsWith("ok ") && r.Replace(" ", "").Contains("\"on\":true");
+            return HostsIcon(Link.Ask(Link.HubPipe, "tray-host", 1000));
         }
+        // Hub's answer to "tray-host": ok {"on":true} = it shows the one Hallow icon
+        public static bool HostsIcon(string reply) { return reply != null && reply.StartsWith("ok ") && reply.Replace(" ", "").Contains("\"on\":true"); }
         // A message from Hub's icon. False when Hub didn't take it.
         public static bool Notify(string title, string text)
         {
-            Func<string, string> clean = s => (s ?? "").Replace("\t", " ").Replace("\r", " ").Replace("\n", " ");
-            var r = Link.Ask(Link.HubPipe, "notify Overlay\t" + clean(title) + "\t" + clean(text), 1000);
-            return r != null && (r == "ok" || r.StartsWith("ok "));
+            return Took(Link.Ask(Link.HubPipe, NotifyLine(title, text), 1000));
         }
+        // 1.24 (tested): one line - "notify Overlay<TAB>title<TAB>text"; tabs and line breaks inside become spaces, so the line can't split
+        public static string NotifyLine(string title, string text)
+        {
+            Func<string, string> clean = s => (s ?? "").Replace("\t", " ").Replace("\r", " ").Replace("\n", " ");
+            return "notify Overlay\t" + clean(title) + "\t" + clean(text);
+        }
+        public static bool Took(string reply) { return reply != null && (reply == "ok" || reply.StartsWith("ok ")); }
     }
 }

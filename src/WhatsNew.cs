@@ -13,6 +13,7 @@ namespace HallowOverlay
     {
         // Newest first. One or two short lines per version.
         public static readonly Tuple<string, string[]>[] Notes = {
+            Tuple.Create("1.24", new[] { "Frame-time graph: a dashed amber line shows your 1% low, with the number next to it (Show > Frame-time graph)", "Gear battery chips sit together as small pills - amber or red when low, a plug when a device is on its cable, ~ when Gear estimated the level", "\"Ad muted\" in now playing while Hallow Mixer mutes a Spotify ad, and \"Replay saved\" from Hallow Clips" }),
             Tuple.Create("1.23.1", new[] { "Percentages read 45% instead of 45 %" }),
             Tuple.Create("1.23", new[] { "Gear battery chips: Bluetooth earbuds and controllers have their own icons now (they showed a plain battery)" }),
             Tuple.Create("1.22", new[] { "Battery chips from Hallow Gear: your mouse and headset's battery on the panel while you play - only when one is low (the default), always, or off (Settings > Gear battery)", "Hallow Gear doesn't pop up during a game: its low-battery alert shows on the panel as a quiet line instead" }),

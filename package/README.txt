@@ -5,6 +5,15 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
+WHAT'S NEW IN 1.24
+- Frame-time graph: a dashed amber line shows your 1% low, with the number next to it.
+- Gear battery chips sit together as small pills - amber or red when low, a plug when a
+  device is on its cable, ~ when Hallow Gear estimated the level.
+- Now playing says "Ad muted" while Hallow Mixer mutes a Spotify ad, and "Replay saved"
+  shows when Hallow Clips saves a replay.
+- Behind the scenes: an automatic test suite (run off-screen) checks the panel, positions,
+  Gear / Mixer / Clips files and settings from older versions.
+
 WHAT'S NEW IN 1.23.1
 - Percentages read 45% instead of 45 %.
 

@@ -123,7 +123,8 @@ namespace HallowOverlay
         public double GpuClock = -1, MemClock = -1, PowerW = -1, PowerLimitW = -1, VramUsedMB = -1, VramTotalMB = -1;   // NVIDIA
         public double[] FrameMs; public int FrameCount;   // the last few seconds of frame times (for the graph), oldest first
         public string ServerLabel; public double ServerMs = -1, ServerLoss = -1, UpKbps = -1, DownKbps = -1; public bool ServerApprox; public int Stalls;   // the game's server (from NetMonitor)
-        public string NowPlaying;   // "Artist - Title" while something plays (Hallow Mixer), else null
+        public string NowPlaying;   // "Artist - Title" while something plays (Hallow Mixer), else null; "Advertisement" / "Ad muted" (1.24)
+        public bool AdMuted;        // 1.24: Hallow Mixer is muting a Spotify ad right now
         public List<GearChip> Gear; public string GearAlert; public int GearAlertLevel = 1;   // 1.22: Hallow Gear's battery chips and its held low-battery alert
         public Sample Copy() { return (Sample)MemberwiseClone(); }
     }
@@ -221,7 +222,7 @@ namespace HallowOverlay
                 try { if (cpu != null) s.Cpu = Math.Min(100, cpu.NextValue()); } catch { }
                 try { var m = new MEMORYSTATUSEX(); if (GlobalMemoryStatusEx(m)) { s.RamTotalGB = m.ullTotalPhys / 1073741824.0; s.RamUsedGB = (m.ullTotalPhys - m.ullAvailPhys) / 1073741824.0; } } catch { }
                 s.Gpu = gpu; s.GpuTemp = gpuTemp; s.GpuClock = gpuClock; s.MemClock = memClock; s.PowerW = power; s.PowerLimitW = powerLimit; s.VramUsedMB = vramUsed; s.VramTotalMB = vramTotal;
-                lock (gate) { s.PingMs = pingMs; s.LossPct = lossPct; s.JitterMs = jitterMs; s.MicMuted = muted; s.MixerOn = mixerOn; s.NowPlaying = mixerOn ? nowPlaying : winNow; last = s; }
+                lock (gate) { s.PingMs = pingMs; s.LossPct = lossPct; s.JitterMs = jitterMs; s.MicMuted = muted; s.MixerOn = mixerOn; s.AdMuted = AdMutedNow(); s.NowPlaying = NowText(s.AdMuted); last = s; }
                 if (smi != null && smi.HasExited && tick % 30 == 0) StartSmi();
             }
         }
@@ -252,8 +253,22 @@ namespace HallowOverlay
         // ---- Hallow Mixer's local API: is the mic muted, and what's playing?
         // Mixer 3.14+ has GET /api/wait?rev=<n>: it answers as soon as something changes (or after 25 s), so the MIC MUTED warning
         // shows up at once. Older Mixers answer 404 there: then /state is asked every 2 seconds, like before.
-        public static string MixerApiFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"HallowMixer\api.json");
-        bool muted, mixerOn; string nowPlaying;
+        public static string MixerApiFile = Path.Combine(NowPlaying.MixerDir, "api.json");   // 1.24: HALLOW_MIXER_DIR for test copies
+        bool muted, mixerOn; MixerState mixerNow;
+        // 1.24: Mixer mutes a Spotify ad: its status.json says so as soon as an ad starts or ends; its API (which may wait up to 25 s) otherwise
+        bool AdMutedNow()
+        {
+            if (Snap.On) return false;
+            bool? file = NowPlaying.AdMutedNow(DateTime.Now);
+            if (file.HasValue) return file.Value;
+            return mixerOn && mixerNow != null && mixerNow.AdMuted;
+        }
+        // what the panel says (under the lock)
+        string NowText(bool adMuted)
+        {
+            if (mixerOn) return mixerNow == null ? (adMuted ? NowPlaying.AdMutedText : null) : NowPlaying.Display(mixerNow.Title, mixerNow.Artist, mixerNow.Playing, adMuted);
+            return NowPlaying.Display(winNow, adMuted);
+        }
         void MixerLoop()
         {
             var js = new JavaScriptSerializer(); int rev = 0; string waitFor = null;   // waitFor: the api.json the wait call works with (null = not tried yet / unknown)
@@ -273,19 +288,9 @@ namespace HallowOverlay
                     req.Timeout = req.ReadWriteTimeout = useWait ? 32000 : 1500;
                     using (var r = req.GetResponse()) using (var rd = new StreamReader(r.GetResponseStream()))
                     {
-                        var st = js.Deserialize<Dictionary<string, object>>(rd.ReadToEnd());
-                        bool m = false; object mic, mm;
-                        if (st.TryGetValue("mic", out mic) && mic is Dictionary<string, object> && ((Dictionary<string, object>)mic).TryGetValue("muted", out mm) && mm is bool) m = (bool)mm;
-                        string now = null; object np;
-                        if (st.TryGetValue("nowPlaying", out np) && np is Dictionary<string, object>)
-                        {
-                            var d = (Dictionary<string, object>)np; object title, artist, playing;
-                            d.TryGetValue("title", out title); d.TryGetValue("artist", out artist); d.TryGetValue("playing", out playing);
-                            var ti = title as string; var ar = artist as string;
-                            if (!string.IsNullOrWhiteSpace(ti) && playing is bool && (bool)playing) now = string.IsNullOrWhiteSpace(ar) ? ti.Trim() : ar.Trim() + " - " + ti.Trim();
-                        }
-                        SetMixer(true, m, now);
-                        object rv; int newRev = rev; if (st.TryGetValue("rev", out rv)) try { newRev = Convert.ToInt32(rv); } catch { }
+                        var st = NowPlaying.ParseMixer(rd.ReadToEnd()); if (st == null) throw new InvalidDataException("not JSON");
+                        SetMixer(true, st.MicMuted, st);
+                        int newRev = st.Rev >= 0 ? st.Rev : rev;
                         if (useWait && newRev == rev && (DateTime.UtcNow - t0).TotalMilliseconds < 500) Thread.Sleep(1000);   // answered at once with nothing new: don't spin
                         rev = newRev;
                     }
@@ -301,28 +306,29 @@ namespace HallowOverlay
             }
         }
         // Without Hallow Mixer: what's playing, straight from Windows (Spotify, a browser, any media app), every 2 seconds.
-        string winNow;
+        MediaInfo winNow;
         void WinMediaLoop()
         {
             while (!stop)
             {
                 bool on; lock (gate) on = mixerOn;
-                string now = on ? null : WinMedia.Read();
+                var now = on ? null : WinMedia.ReadInfo();
                 lock (gate)
                 {
-                    bool changed = now != winNow; winNow = now;
-                    if (changed && !mixerOn) { var s = last.Copy(); s.NowPlaying = now; last = s; }
+                    winNow = now;
+                    if (!mixerOn) { var ad = AdMutedNow(); var text = NowText(ad); if (text != last.NowPlaying || ad != last.AdMuted) { var s = last.Copy(); s.NowPlaying = text; s.AdMuted = ad; last = s; } }
                 }
                 Thread.Sleep(2000);
             }
         }
-        void SetMixer(bool on, bool m, string now)
+        void SetMixer(bool on, bool m, MixerState now)
         {
             lock (gate)
             {
-                bool changed = on != mixerOn || m != muted || now != nowPlaying;
-                mixerOn = on; muted = m; nowPlaying = now;
-                if (changed) { var s = last.Copy(); s.MixerOn = on; s.MicMuted = m; s.NowPlaying = now; last = s; }   // show it now, not at the next second
+                mixerOn = on; muted = m; mixerNow = now;
+                var ad = AdMutedNow(); var text = NowText(ad);
+                bool changed = on != last.MixerOn || m != last.MicMuted || text != last.NowPlaying || ad != last.AdMuted;
+                if (changed) { var s = last.Copy(); s.MixerOn = on; s.MicMuted = m; s.NowPlaying = text; s.AdMuted = ad; last = s; }   // show it now, not at the next second
             }
         }
     }
