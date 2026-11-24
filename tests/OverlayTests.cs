@@ -149,8 +149,10 @@ namespace HallowOverlay.Tests
         static void WhatsNewTests()
         {
             Eq(Program.Version, WhatsNew.Notes[0].Item1, "What's new starts with this version");
-            var since = WhatsNew.Since("1.23.1");
-            Ok(since.Count == 1 && since[0].Item1 == "1.24" && since[0].Item2.Any(i => i.Contains("1% low")), "since 1.23.1: just the 1.24 notes");
+            // relative to this build, not pinned to 1.24: from the previous version, only this version's notes are new
+            var prev = WhatsNew.Notes[1].Item1; var since = WhatsNew.Since(prev);
+            Ok(since.Count == 1 && since[0].Item1 == Program.Version, "since " + prev + " (the previous version): just the " + Program.Version + " notes");
+            Ok(WhatsNew.Notes.Any(n => n.Item1 == "1.24" && n.Item2.Any(i => i.Contains("1% low"))), "the 1.24 notes keep the 1% low line");
             Ok(WhatsNew.Since("1.0").Count == 6, "since 1.0: the newest six versions at most");
             Ok(WhatsNew.Since(Program.Version).Count == 0 && WhatsNew.Since("").Count == 0, "nothing new when up to date (or nothing seen yet)");
             Ok(WhatsNew.Notes.Where(n => n.Item1 != "1.23.1").All(n => n.Item2.All(l => !System.Text.RegularExpressions.Regex.IsMatch(l, "[0-9] %"))), "no note says \"45 %\" (family percent rule; 1.23.1 quotes it)");
